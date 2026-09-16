@@ -11,12 +11,12 @@
  * access to it. Real access control lives in firestore.rules, not here.
  */
 export const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID",
+  apiKey: "AIzaSyBGzEpwBGARclSzSuiE5o1HZB-WXp7Ikvg",
+  authDomain: "truck-talk-admin.firebaseapp.com",
+  projectId: "truck-talk-admin",
+  storageBucket: "truck-talk-admin.firebasestorage.app",
+  messagingSenderId: "255238093542",
+  appId: "1:255238093542:web:4cfb42bdf8e1b0b7dd9927",
 };
 
 /* The single owner account. Auto-approved as "owner" on first sign-in,

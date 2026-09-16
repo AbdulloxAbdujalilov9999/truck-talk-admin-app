@@ -4,7 +4,7 @@ import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/12.19
 import {
   getAuth, GoogleAuthProvider, OAuthProvider,
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
-import { getFirestore } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+import { getDatabase } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-database.js";
 import { firebaseConfig } from "./firebase-config.js";
 
 export const isFirebaseConfigured = !!firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith("YOUR_");
@@ -14,7 +14,7 @@ const app = isFirebaseConfigured
   : null;
 
 export const auth = app ? getAuth(app) : null;
-export const db = app ? getFirestore(app) : null;
+export const db = app ? getDatabase(app) : null;
 
 export const googleProvider = new GoogleAuthProvider();
 export const appleProvider = new OAuthProvider("apple.com");

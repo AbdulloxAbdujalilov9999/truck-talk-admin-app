@@ -1,0 +1,67 @@
+{
+  "rules": {
+    // Realtime Database rules have no user-defined functions (unlike
+    // Firestore), so the "is this caller the owner/manager/an approved
+    // teacher" check is inlined everywhere via root.child('users')... — the
+    // real access-control boundary; the admin/main app UIs are convenience
+    // only, nothing here trusts client-side role checks.
+
+    "users": {
+      // Owner/manager list everyone. A teacher never queries this node
+      // directly — see teacherStudents below — so no broader grant here.
+      ".read": "auth != null && root.child('users').child(auth.uid).child('status').val() === 'approved' && (root.child('users').child(auth.uid).child('role').val() === 'owner' || root.child('users').child(auth.uid).child('role').val() === 'manager')",
+
+      "$uid": {
+        // Read your own record; owner/manager read anyone's; a teacher
+        // reads only the specific student records naming them as teacher.
+        ".read": "auth != null && (auth.uid === $uid || (root.child('users').child(auth.uid).child('status').val() === 'approved' && (root.child('users').child(auth.uid).child('role').val() === 'owner' || root.child('users').child(auth.uid).child('role').val() === 'manager')) || (root.child('users').child(auth.uid).child('status').val() === 'approved' && root.child('users').child(auth.uid).child('role').val() === 'teacher' && data.child('teacherId').val() === auth.uid))",
+
+        // Owner: unrestricted. Manager: full control over teacher/student/
+        // pending accounts, but can never touch (or create) an owner or a
+        // manager. Anyone: may still create exactly one profile — their
+        // own — as either the hardcoded owner bootstrap or a pending
+        // request with no role and no teacher; approval only ever happens
+        // via the owner/manager branch above, never at creation.
+        ".write": "auth != null && ((root.child('users').child(auth.uid).child('status').val() === 'approved' && root.child('users').child(auth.uid).child('role').val() === 'owner') || (root.child('users').child(auth.uid).child('status').val() === 'approved' && root.child('users').child(auth.uid).child('role').val() === 'manager' && !(data.exists() && (data.child('role').val() === 'owner' || data.child('role').val() === 'manager')) && !(newData.exists() && (newData.child('role').val() === 'owner' || newData.child('role').val() === 'manager'))) || (auth.uid === $uid && !data.exists() && newData.child('email').val() === auth.token.email && ((auth.token.email === 'abdujalilov7707@gmail.com' && newData.child('role').val() === 'owner' && newData.child('status').val() === 'approved') || (auth.token.email !== 'abdujalilov7707@gmail.com' && !newData.hasChild('role') && newData.child('status').val() === 'pending' && !newData.hasChild('teacherId')))))",
+
+        // An approved user may always touch just these three fields of
+        // their own record (name edits, presence heartbeat) — on top of,
+        // not instead of, the owner/manager grant above.
+        "name": { ".write": "auth != null && auth.uid === $uid" },
+        "lastActive": { ".write": "auth != null && auth.uid === $uid" },
+        "updatedAt": { ".write": "auth != null && auth.uid === $uid" }
+      }
+    },
+
+    "progress": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || (root.child('users').child(auth.uid).child('status').val() === 'approved' && (root.child('users').child(auth.uid).child('role').val() === 'owner' || root.child('users').child(auth.uid).child('role').val() === 'manager')) || (root.child('users').child(auth.uid).child('status').val() === 'approved' && root.child('users').child(auth.uid).child('role').val() === 'teacher' && root.child('users').child($uid).child('teacherId').val() === auth.uid))",
+        // Own progress only — app.js writes here, nothing else does.
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+
+    // Nested by teacher rather than a flat collection: RTDB has no
+    // composite indexes, so "this teacher's events, in order" is just a
+    // direct path read (events/{teacherId}) sorted client-side, instead of
+    // a query that would need one.
+    "events": {
+      "$teacherId": {
+        ".read": "auth != null && (auth.uid === $teacherId || (root.child('users').child(auth.uid).child('status').val() === 'approved' && (root.child('users').child(auth.uid).child('role').val() === 'owner' || root.child('users').child(auth.uid).child('role').val() === 'manager')))",
+        ".write": "auth != null && (auth.uid === $teacherId || (root.child('users').child(auth.uid).child('status').val() === 'approved' && (root.child('users').child(auth.uid).child('role').val() === 'owner' || root.child('users').child(auth.uid).child('role').val() === 'manager')))"
+      }
+    },
+
+    // Denormalized index: teacherStudents/{teacherId}/{studentUid} = true.
+    // Lets a teacher discover which /users/{uid} records are theirs to
+    // read (see users/$uid/.read above) without ever querying /users
+    // directly. Kept in sync by admin.js's approveUser/setUserRole/
+    // reassignTeacher whenever a student's teacherId changes.
+    "teacherStudents": {
+      "$teacherId": {
+        ".read": "auth != null && (auth.uid === $teacherId || (root.child('users').child(auth.uid).child('status').val() === 'approved' && (root.child('users').child(auth.uid).child('role').val() === 'owner' || root.child('users').child(auth.uid).child('role').val() === 'manager')))",
+        ".write": "auth != null && root.child('users').child(auth.uid).child('status').val() === 'approved' && (root.child('users').child(auth.uid).child('role').val() === 'owner' || root.child('users').child(auth.uid).child('role').val() === 'manager')"
+      }
+    }
+  }
+}

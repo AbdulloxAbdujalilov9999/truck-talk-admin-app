@@ -20,8 +20,8 @@ import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail,
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 import {
-  doc, setDoc, onSnapshot, serverTimestamp,
-} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  ref, set, update, onValue, serverTimestamp,
+} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-database.js";
 
 const GOOGLE_ICON = `<svg viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.1 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.5 16 18.9 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.1 29.6 4 24 4c-7.6 0-14.1 4.3-17.4 10.7z"/><path fill="#4CAF50" d="M24 44c5.5 0 10.5-2.1 14.2-5.6l-6.6-5.6C29.6 34.8 26.9 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.6 5.1C9.8 39.6 16.3 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.3-4.1 5.7l6.6 5.6C39.9 37.4 44 31.4 44 24c0-1.3-.1-2.7-.4-3.5z"/></svg>`;
 const APPLE_ICON = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.365 1.43c0 1.14-.415 2.09-1.244 2.86-.997.914-2.03 1.44-3.15 1.35-.075-1.09.435-2.14 1.235-2.87.87-.79 2.14-1.34 3.05-1.34.03 0 .07 0 .11 0zM20.36 17.02c-.494 1.13-.73 1.635-1.36 2.63-.884 1.395-2.13 3.13-3.68 3.145-1.38.014-1.735-.9-3.605-.885-1.87.014-2.26.9-3.64.885-1.55-.015-2.73-1.585-3.615-2.98C1.9 16.75 1.62 12.3 3.02 9.93c.99-1.665 2.55-2.64 4.005-2.64 1.48 0 2.415.9 3.64.9 1.19 0 1.92-.9 3.64-.9 1.3 0 2.68.71 3.665 1.935-3.22 1.765-2.7 6.36.39 7.795z"/></svg>`;
@@ -194,8 +194,8 @@ function renderCompleteProfile(user){
 }
 
 async function requestAccess(user, name){
-  // Not lower-cased: this must byte-for-byte match request.auth.token.email
-  // in firestore.rules, which is what actually decides owner bootstrap.
+  // Not lower-cased: this must byte-for-byte match auth.token.email in
+  // database.rules.json, which is what actually decides owner bootstrap.
   const email = user.email || "";
   const isOwner = email === OWNER_EMAIL;
   const profile = {
@@ -203,14 +203,13 @@ async function requestAccess(user, name){
     email,
     photoURL: user.photoURL || null,
     provider: (user.providerData[0] && user.providerData[0].providerId) || "password",
-    role: isOwner ? "owner" : null,
     status: isOwner ? "approved" : "pending",
-    teacherId: null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     lastActive: serverTimestamp(),
   };
-  await setDoc(doc(db, "users", user.uid), profile);
+  if (isOwner) profile.role = "owner";
+  await set(ref(db, "users/" + user.uid), profile);
 }
 
 /* ---------------- Pending / restricted / wrong-app screens ---------------- */
@@ -260,9 +259,9 @@ function mountApp(user, profile){
   window.TTE_user = { uid: user.uid, name: profile.name, email: profile.email, role: profile.role, teacherId: profile.teacherId || null };
   window.TTE_signOut = () => signOut(auth);
   window.TTE_syncProgress = (progress) => {
-    setDoc(doc(db, "progress", user.uid), Object.assign({}, progress, { updatedAt: serverTimestamp() }), { merge: true }).catch(() => {});
+    set(ref(db, "progress/" + user.uid), Object.assign({}, progress, { updatedAt: serverTimestamp() })).catch(() => {});
   };
-  setDoc(doc(db, "users", user.uid), { lastActive: serverTimestamp() }, { merge: true }).catch(() => {});
+  update(ref(db, "users/" + user.uid), { lastActive: serverTimestamp() }).catch(() => {});
 
   if (!window.TTE_mounted){
     window.TTE_mounted = true;
@@ -318,10 +317,9 @@ export function initAuthGate(userOpts){
       return;
     }
 
-    const ref = doc(db, "users", user.uid);
-    unsubProfile = onSnapshot(ref, (snap) => {
+    unsubProfile = onValue(ref(db, "users/" + user.uid), (snap) => {
       if (!snap.exists()){ renderCompleteProfile(user); return; }
-      handleProfile(user, snap.data());
+      handleProfile(user, snap.val());
     }, (err) => {
       errorMsg = mapAuthError(err);
       renderAuthScreen();

@@ -1,20 +1,29 @@
 /* Truck Talk — Admin platform (owner / manager / teacher).
  * Sections: Users (owner/manager), Students, Progress, Calendar.
  *
- * Standalone repo: shares a Firebase project (Auth + Firestore) with the
- * truck-talk-webapp course repo via shared/firebase-config.js, but has no
- * access to that repo's curriculum.js/grammar.js — so the Progress section
- * shows lesson/homework/grammar completion by day/session/unit number and
- * score only (no lesson titles or "X/60"-style totals). See dayTitle(),
- * grammarTitle(), homeworkSessionsTotal() below, which degrade gracefully
- * when CURRICULUM/GRAMMAR aren't defined.
+ * Standalone repo: shares a Firebase project (Auth + Realtime Database)
+ * with the truck-talk-webapp course repo via shared/firebase-config.js,
+ * but has no access to that repo's curriculum.js/grammar.js — so the
+ * Progress section shows lesson/homework/grammar completion by day/
+ * session/unit number and score only (no lesson titles or "X/60"-style
+ * totals). See dayTitle(), grammarTitle(), homeworkSessionsTotal() below,
+ * which degrade gracefully when CURRICULUM/GRAMMAR aren't defined.
+ *
+ * Backend is Realtime Database, not Firestore (see shared/firebase.js for
+ * why). RTDB security rules can't constrain an arbitrary query the way
+ * Firestore's can, so "a teacher can only list their own students" is done
+ * via a small denormalized index — /teacherStudents/{teacherId}/{uid} —
+ * kept in sync whenever a student's teacherId changes (see approveUser,
+ * setUserRole, reassignTeacher below). A teacher reads their own slice of
+ * that index (allowed by rules), then reads each of those specific student
+ * records individually (also allowed by rules, since each student's own
+ * teacherId field names them) — never a broad query over all of /users.
  */
 import { db } from "./shared/firebase.js";
 import { initAuthGate } from "./shared/auth-gate.js";
 import {
-  collection, doc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot,
-  query, where, orderBy, serverTimestamp, Timestamp,
-} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  ref, onValue, set, update, remove, push, serverTimestamp,
+} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-database.js";
 
 const ROLE_LABEL = { owner: "Owner", manager: "Manager", teacher: "Teacher", student: "Student" };
 
@@ -25,6 +34,8 @@ let progressCache = new Map();
 let progressUnsubs = new Map();
 let eventsCache = [];
 let unsubUsers = null;
+let unsubTeacherStudentsIndex = null;
+let studentUnsubs = new Map(); // uid -> unsub (teacher mode only)
 let unsubEvents = null;
 
 function $(id){ return document.getElementById(id); }
@@ -36,7 +47,11 @@ function isOwner(){ return me().role === "owner"; }
 function isManager(){ return me().role === "manager"; }
 function isOwnerOrManager(){ return isOwner() || isManager(); }
 function isTeacher(){ return me().role === "teacher"; }
-function userName(uid){ const u = usersById.get(uid); return u ? u.name : "Unknown"; }
+function userName(uid){
+  if (uid === me().uid) return me().name;
+  const u = usersById.get(uid);
+  return u ? u.name : "Unknown";
+}
 
 let toastTimer = null;
 function toast(msg){
@@ -67,18 +82,48 @@ function homeworkSessionsTotal(){
   return Math.ceil(seen.size / 20);
 }
 
-/* ---------------- Firestore subscriptions ---------------- */
+/* ---------------- Realtime Database subscriptions ---------------- */
 function subscribeUsers(){
   if (unsubUsers) unsubUsers();
-  const q = isOwnerOrManager()
-    ? query(collection(db, "users"), orderBy("createdAt", "desc"))
-    : query(collection(db, "users"), where("teacherId", "==", me().uid));
-  unsubUsers = onSnapshot(q, (snap) => {
-    usersCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    usersById = new Map(usersCache.map(u => [u.id, u]));
-    updateUsersBadge();
-    renderSection();
+  if (unsubTeacherStudentsIndex) unsubTeacherStudentsIndex();
+  studentUnsubs.forEach(unsub => unsub());
+  studentUnsubs.clear();
+
+  if (isOwnerOrManager()){
+    unsubUsers = onValue(ref(db, "users"), (snap) => {
+      const val = snap.val() || {};
+      usersCache = Object.entries(val)
+        .map(([id, u]) => ({ id, ...u }))
+        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      usersById = new Map(usersCache.map(u => [u.id, u]));
+      updateUsersBadge();
+      renderSection();
+    }, (err) => toast(err.message));
+    return;
+  }
+
+  // Teacher: look up my student IDs from the index, then read each one
+  // individually — see the file header comment for why.
+  unsubTeacherStudentsIndex = onValue(ref(db, "teacherStudents/" + me().uid), (snap) => {
+    syncStudentSubs(Object.keys(snap.val() || {}));
   }, (err) => toast(err.message));
+}
+
+function syncStudentSubs(ids){
+  const keep = new Set(ids);
+  for (const [uid, unsub] of studentUnsubs){
+    if (!keep.has(uid)){ unsub(); studentUnsubs.delete(uid); usersById.delete(uid); }
+  }
+  ids.forEach(uid => {
+    if (studentUnsubs.has(uid)) return;
+    const unsub = onValue(ref(db, "users/" + uid), (snap) => {
+      if (snap.exists()) usersById.set(uid, { id: uid, ...snap.val() });
+      else usersById.delete(uid);
+      usersCache = Array.from(usersById.values());
+      renderSection();
+    }, () => {});
+    studentUnsubs.set(uid, unsub);
+  });
 }
 
 function updateUsersBadge(){
@@ -95,9 +140,11 @@ function subscribeEvents(teacherId){
   subscribedEventsTeacherId = teacherId;
   if (unsubEvents) unsubEvents();
   if (!teacherId){ eventsCache = []; unsubEvents = null; return; }
-  const q = query(collection(db, "events"), where("teacherId", "==", teacherId), orderBy("startAt", "asc"));
-  unsubEvents = onSnapshot(q, (snap) => {
-    eventsCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  unsubEvents = onValue(ref(db, "events/" + teacherId), (snap) => {
+    const val = snap.val() || {};
+    eventsCache = Object.entries(val)
+      .map(([id, ev]) => ({ id, ...ev }))
+      .sort((a, b) => (a.startAt || 0) - (b.startAt || 0));
     if (state.section === "calendar") renderSection();
   }, (err) => toast(err.message));
 }
@@ -109,8 +156,8 @@ function syncProgressSubs(uids){
   }
   uids.forEach(uid => {
     if (progressUnsubs.has(uid)) return;
-    const unsub = onSnapshot(doc(db, "progress", uid), (snap) => {
-      progressCache.set(uid, snap.exists() ? snap.data() : null);
+    const unsub = onValue(ref(db, "progress/" + uid), (snap) => {
+      progressCache.set(uid, snap.exists() ? snap.val() : null);
       if (state.section === "students" || (state.section === "progress" && state.selectedStudent === uid)) renderSection();
     }, () => {});
     progressUnsubs.set(uid, unsub);
@@ -119,23 +166,39 @@ function syncProgressSubs(uids){
 
 /* ---------------- Writes ---------------- */
 async function approveUser(uid, role, teacherId){
-  await updateDoc(doc(db, "users", uid), {
-    role, status: "approved", teacherId: role === "student" ? (teacherId || null) : null, updatedAt: serverTimestamp(),
-  });
+  const updates = {
+    [`users/${uid}/role`]: role,
+    [`users/${uid}/status`]: "approved",
+    [`users/${uid}/updatedAt`]: serverTimestamp(),
+    [`users/${uid}/teacherId`]: role === "student" ? (teacherId || null) : null,
+  };
+  if (role === "student" && teacherId) updates[`teacherStudents/${teacherId}/${uid}`] = true;
+  await update(ref(db), updates);
   toast("Approved.");
 }
 async function setUserStatus(uid, status){
-  await updateDoc(doc(db, "users", uid), { status, updatedAt: serverTimestamp() });
+  await update(ref(db), { [`users/${uid}/status`]: status, [`users/${uid}/updatedAt`]: serverTimestamp() });
   toast(status === "restricted" ? "Access restricted." : "Access restored.");
 }
 async function setUserRole(uid, role){
   const u = usersById.get(uid);
-  await updateDoc(doc(db, "users", uid), {
-    role, teacherId: role === "student" ? ((u && u.teacherId) || null) : null, updatedAt: serverTimestamp(),
-  });
+  const oldTeacherId = u && u.teacherId;
+  const updates = { [`users/${uid}/role`]: role, [`users/${uid}/updatedAt`]: serverTimestamp() };
+  if (role === "student"){
+    updates[`users/${uid}/teacherId`] = oldTeacherId || null;
+  } else {
+    updates[`users/${uid}/teacherId`] = null;
+    if (oldTeacherId) updates[`teacherStudents/${oldTeacherId}/${uid}`] = null;
+  }
+  await update(ref(db), updates);
 }
 async function reassignTeacher(uid, teacherId){
-  await updateDoc(doc(db, "users", uid), { teacherId: teacherId || null, updatedAt: serverTimestamp() });
+  const u = usersById.get(uid);
+  const oldTeacherId = u && u.teacherId;
+  const updates = { [`users/${uid}/teacherId`]: teacherId || null, [`users/${uid}/updatedAt`]: serverTimestamp() };
+  if (oldTeacherId && oldTeacherId !== teacherId) updates[`teacherStudents/${oldTeacherId}/${uid}`] = null;
+  if (teacherId) updates[`teacherStudents/${teacherId}/${uid}`] = true;
+  await update(ref(db), updates);
   toast("Teacher updated.");
 }
 
@@ -457,7 +520,7 @@ function renderCalendarSection(main){
 function groupEventsByDate(events){
   const map = new Map();
   events.forEach(ev => {
-    const d = ev.startAt && ev.startAt.toDate ? ev.startAt.toDate() : new Date();
+    const d = ev.startAt ? new Date(ev.startAt) : new Date();
     const key = d.toDateString();
     if (!map.has(key)) map.set(key, []);
     map.get(key).push(ev);
@@ -465,9 +528,9 @@ function groupEventsByDate(events){
   return Array.from(map.entries()).map(([date, evs]) => ({ date, events: evs }));
 }
 
-function fmtTime(ts){
-  if (!ts || !ts.toDate) return "";
-  return ts.toDate().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+function fmtTime(ms){
+  if (!ms) return "";
+  return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
 function renderEventGroup(group){
@@ -485,9 +548,9 @@ function renderEventGroup(group){
     </div>`;
 }
 
-function toDatetimeLocal(ts){
-  if (!ts || !ts.toDate) return "";
-  const d = ts.toDate();
+function toDatetimeLocal(ms){
+  if (!ms) return "";
+  const d = new Date(ms);
   const pad = n => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
@@ -526,7 +589,7 @@ function openEventModal(existingEvent){
   $("evCancel").addEventListener("click", closeModal);
   if (isEdit) $("evDelete").addEventListener("click", async () => {
     if (confirm("Delete this scheduled lesson?")){
-      try{ await deleteDoc(doc(db, "events", existingEvent.id)); closeModal(); } catch(err){ alert(err.message); }
+      try{ await remove(ref(db, `events/${teacherId}/${existingEvent.id}`)); closeModal(); } catch(err){ alert(err.message); }
     }
   });
   $("eventForm").addEventListener("submit", async (e) => {
@@ -541,13 +604,13 @@ function openEventModal(existingEvent){
       title: $("evTitle").value.trim(),
       notes: $("evNotes").value.trim(),
       studentIds,
-      startAt: Timestamp.fromDate(start),
-      endAt: Timestamp.fromDate(end),
+      startAt: start.getTime(),
+      endAt: end.getTime(),
       updatedAt: serverTimestamp(),
     };
     try{
-      if (isEdit) await updateDoc(doc(db, "events", existingEvent.id), payload);
-      else await addDoc(collection(db, "events"), Object.assign({ createdAt: serverTimestamp() }, payload));
+      if (isEdit) await update(ref(db, `events/${teacherId}/${existingEvent.id}`), payload);
+      else await set(push(ref(db, `events/${teacherId}`)), Object.assign({ createdAt: serverTimestamp() }, payload));
       closeModal();
       toast(isEdit ? "Lesson updated." : "Lesson scheduled.");
     }catch(err){ alert(err.message); }

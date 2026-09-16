@@ -239,15 +239,30 @@ function renderWrongApp(profile){
   const forAdmin = opts.appKind === "main"; // signed into the course, but role isn't student
   const label = ROLE_LABEL[profile.role] || profile.role;
   const targetUrl = forAdmin ? opts.adminUrl : opts.mainUrl;
+
+  if (targetUrl){
+    // Nobody should have to click through to the right app — a student
+    // has no reason to be on the admin dashboard (or vice versa), so send
+    // them straight there the moment we know their role doesn't match.
+    root().innerHTML = `
+      <div class="auth-screen"><div class="auth-card">
+        <span class="auth-brand">TRUCK TALK</span>
+        <h1 class="auth-title">Redirecting…</h1>
+        <p class="auth-sub">Taking you to ${forAdmin ? "the admin dashboard" : "the course"}.</p>
+        <div class="auth-links"><button class="auth-link-btn" id="wrongAppSignOut">Wrong account? Sign out</button></div>
+      </div></div>`;
+    $("wrongAppSignOut").addEventListener("click", () => signOut(auth));
+    window.location.replace(targetUrl);
+    return;
+  }
+
   root().innerHTML = `
     <div class="auth-screen"><div class="auth-card">
       <span class="auth-brand">TRUCK TALK</span>
       <span class="auth-role-pill">${escapeHtml(label)}</span>
       <h1 class="auth-title">${forAdmin ? "This is the student course" : "This is the admin dashboard"}</h1>
       <p class="auth-sub">${forAdmin ? `Your account is a ${label.toLowerCase()} account — head to the admin dashboard instead.` : "Your account is a student account — head back to the course."}</p>
-      ${targetUrl
-        ? `<a class="btn btn-accent" style="display:block;text-align:center;text-decoration:none;box-sizing:border-box;" href="${escapeHtml(targetUrl)}">${forAdmin ? "Open Admin Dashboard" : "Open Course"}</a>`
-        : `<div class="auth-notice">${forAdmin ? "Ask your owner or manager for the admin dashboard link." : "Ask your owner or manager for the course link."}</div>`}
+      <div class="auth-notice">${forAdmin ? "Ask your owner or manager for the admin dashboard link." : "Ask your owner or manager for the course link."}</div>
       <div class="auth-links"><button class="auth-link-btn" id="wrongAppSignOut">Sign out</button></div>
     </div></div>`;
   $("wrongAppSignOut").addEventListener("click", () => signOut(auth));

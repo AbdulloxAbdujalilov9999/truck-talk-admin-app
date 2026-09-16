@@ -539,7 +539,7 @@ function renderEventGroup(group){
       <h3 class="cal-date">${escapeHtml(group.date)}</h3>
       ${group.events.map(ev => `
         <div class="cal-event" data-edit-event="${ev.id}">
-          <div class="cal-event-time">${fmtTime(ev.startAt)} – ${fmtTime(ev.endAt)}</div>
+          <div class="cal-event-time">${fmtTime(ev.startAt)}</div>
           <div>
             <span class="cal-event-title">${escapeHtml(ev.title)}</span>
             ${ev.studentIds && ev.studentIds.length ? `<span class="cal-event-students">${ev.studentIds.map(id => escapeHtml(userName(id))).join(", ")}</span>` : ""}
@@ -569,8 +569,6 @@ function openEventModal(existingEvent){
           <input class="auth-input" id="evTitle" required value="${isEdit ? escapeHtml(existingEvent.title) : ""}">
           <label class="auth-label">Start</label>
           <input class="auth-input" id="evStart" type="datetime-local" required value="${isEdit ? toDatetimeLocal(existingEvent.startAt) : ""}">
-          <label class="auth-label">End</label>
-          <input class="auth-input" id="evEnd" type="datetime-local" required value="${isEdit ? toDatetimeLocal(existingEvent.endAt) : ""}">
           <label class="auth-label">Student(s)</label>
           <select class="select" id="evStudents" multiple size="${Math.min(5, Math.max(2, students.length || 2))}" style="width:100%;">
             ${students.length ? students.map(s => `<option value="${s.id}" ${isEdit && existingEvent.studentIds && existingEvent.studentIds.includes(s.id) ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("") : `<option disabled>No students assigned to this teacher yet</option>`}
@@ -595,8 +593,6 @@ function openEventModal(existingEvent){
   $("eventForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const start = new Date($("evStart").value);
-    const end = new Date($("evEnd").value);
-    if (end <= start){ alert("End time must be after the start time."); return; }
     const studentIds = Array.from($("evStudents").selectedOptions).map(o => o.value).filter(Boolean);
     const payload = {
       teacherId,
@@ -605,7 +601,6 @@ function openEventModal(existingEvent){
       notes: $("evNotes").value.trim(),
       studentIds,
       startAt: start.getTime(),
-      endAt: end.getTime(),
       updatedAt: serverTimestamp(),
     };
     try{

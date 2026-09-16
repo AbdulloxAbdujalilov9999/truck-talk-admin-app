@@ -19,11 +19,12 @@
  * records individually (also allowed by rules, since each student's own
  * teacherId field names them) — never a broad query over all of /users.
  */
-import { db } from "./shared/firebase.js";
+import { db, auth } from "./shared/firebase.js";
 import { initAuthGate } from "./shared/auth-gate.js";
 import {
   ref, onValue, set, update, remove, push, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-database.js";
+import { sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 
 const ROLE_LABEL = { owner: "Owner", manager: "Manager", teacher: "Teacher", student: "Student" };
 
@@ -201,6 +202,14 @@ async function reassignTeacher(uid, teacherId){
   await update(ref(db), updates);
   toast("Teacher updated.");
 }
+async function sendReset(email){
+  try{
+    await sendPasswordResetEmail(auth, email);
+    toast("Reset email sent to " + email + ".");
+  }catch(err){
+    alert(err.message);
+  }
+}
 
 /* ---------------- Shell ---------------- */
 function initialSection(){ return isOwnerOrManager() ? "users" : "students"; }
@@ -285,6 +294,7 @@ function renderUsersSection(main){
   main.querySelectorAll("[data-restore]").forEach(btn => btn.addEventListener("click", () => setUserStatus(btn.dataset.restore, "approved")));
   main.querySelectorAll("[data-role]").forEach(sel => sel.addEventListener("change", (e) => setUserRole(sel.dataset.role, e.target.value)));
   main.querySelectorAll("[data-teacher]").forEach(sel => sel.addEventListener("change", (e) => reassignTeacher(sel.dataset.teacher, e.target.value)));
+  main.querySelectorAll("[data-reset-pw]").forEach(btn => btn.addEventListener("click", () => sendReset(btn.dataset.resetPw)));
 }
 
 function canManage(u){
@@ -314,6 +324,7 @@ function userRow(u, isPending){
              ${canManage(u) ? `<button class="btn btn-danger btn-sm" data-restrict="${u.id}">Deny</button>` : ""}`
           : canManage(u) ? `
               ${u.role && u.role !== "owner" ? `<select class="select" data-role="${u.id}">${roleOptions.map(r => `<option value="${r}" ${u.role === r ? "selected" : ""}>${ROLE_LABEL[r]}</option>`).join("")}</select>` : ""}
+              ${u.provider === "password" ? `<button class="btn btn-ghost btn-sm" data-reset-pw="${escapeHtml(u.email)}">Reset password</button>` : ""}
               ${u.status === "restricted"
                 ? `<button class="btn btn-ghost btn-sm" data-restore="${u.id}">Restore access</button>`
                 : (u.role !== "owner" ? `<button class="btn btn-danger btn-sm" data-restrict="${u.id}">Restrict</button>` : "")}

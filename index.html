@@ -1,4 +1,11 @@
 <title>Truck Talk Admin</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1C1B18">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TT Admin">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="shared/theme.css">
 <style>
@@ -224,3 +231,8 @@
 <div id="modalRoot"></div>
 
 <script type="module" src="admin.js"></script>
+<script>
+  if ("serviceWorker" in navigator){
+    window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
+  }
+</script>

@@ -272,6 +272,12 @@ function renderWrongApp(profile){
 function mountApp(user, profile){
   showAppShell(true);
   window.TTE_user = { uid: user.uid, name: profile.name, email: profile.email, role: profile.role, teacherId: profile.teacherId || null };
+  // Non-student roles get a voluntary link to the admin dashboard (shown
+  // in the host app's own UI, e.g. Settings) — they are never forced
+  // there. Only appKind "main" ever has a role other than student mount
+  // here at all, so this is effectively "am I on the course site and not
+  // a student".
+  window.TTE_adminUrl = (profile.role !== "student" && opts.adminUrl) ? opts.adminUrl : null;
   window.TTE_signOut = () => signOut(auth);
   window.TTE_syncProgress = (progress) => {
     set(ref(db, "progress/" + user.uid), Object.assign({}, progress, { updatedAt: serverTimestamp() })).catch(() => {});
@@ -298,7 +304,12 @@ function handleProfile(user, profile){
     return;
   }
   const isStudentRole = profile.role === "student";
-  const matchesThisApp = opts.appKind === "admin" ? !isStudentRole : isStudentRole;
+  // The course site (appKind "main") is open to every approved role —
+  // owner, manager, and teacher accounts can see the platform itself,
+  // exactly like a student would, not just admin staff. The admin
+  // dashboard (appKind "admin") is still staff-only: a student has no
+  // data there and gets sent back to the course instead.
+  const matchesThisApp = opts.appKind === "admin" ? !isStudentRole : true;
   if (!matchesThisApp){
     showAppShell(false);
     renderWrongApp(profile);

@@ -633,9 +633,4 @@ function init(){
 window.TTE_mount = init;
 window.TTE_refresh = () => { renderShell(); setSection(state.section || initialSection()); };
 
-// This app lives in its own repo/deployment now, separate from the course
-// site — there's no fixed relative path to it. Once the course is deployed,
-// set mainUrl to its real URL so a student who signs in here gets a working
-// link back; until then a signed-in student just sees guidance text instead
-// of a dead link.
-initAuthGate({ appKind: "admin", mainUrl: null });
+initAuthGate({ appKind: "admin", mainUrl: "https://truck-talk-webapp.vercel.app/" });

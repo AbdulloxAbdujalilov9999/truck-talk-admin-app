@@ -1,5 +1,5 @@
 /* Truck Talk — Admin platform (owner / manager / teacher).
- * Sections: Users (owner/manager), Students, Progress, Calendar.
+ * Sections: Users (owner/manager), Students, Progress, Calendar, Account.
  *
  * Standalone repo: shares a Firebase project (Auth + Realtime Database)
  * with the truck-talk-webapp course repo via shared/firebase-config.js,
@@ -24,7 +24,9 @@ import { initAuthGate } from "./shared/auth-gate.js";
 import {
   ref, onValue, set, update, remove, push, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-database.js";
-import { sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+import {
+  sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential, verifyBeforeUpdateEmail,
+} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 
 const ROLE_LABEL = { owner: "Owner", manager: "Manager", teacher: "Teacher", student: "Student" };
 
@@ -210,6 +212,20 @@ async function sendReset(email){
     alert(err.message);
   }
 }
+async function changeEmail(newEmail, currentPassword){
+  // This project requires verifying the new address before it takes
+  // effect (Firebase rejects a direct updateEmail with
+  // auth/operation-not-allowed) — so this sends a confirm link to
+  // newEmail rather than changing anything immediately. The database's
+  // users/{uid}/email field is reconciled automatically on a later
+  // sign-in once auth.currentUser.email actually changes — see
+  // mountApp() in shared/auth-gate.js.
+  const user = auth.currentUser;
+  const cred = EmailAuthProvider.credential(user.email, currentPassword);
+  await reauthenticateWithCredential(user, cred);
+  await verifyBeforeUpdateEmail(user, newEmail);
+  toast("Confirmation link sent to " + newEmail + " — click it to finish changing your email.");
+}
 
 /* ---------------- Shell ---------------- */
 function initialSection(){ return isOwnerOrManager() ? "users" : "students"; }
@@ -221,6 +237,7 @@ function renderShell(){
   navItems.push(["students", "Students"]);
   navItems.push(["progress", "Progress"]);
   navItems.push(["calendar", "Calendar"]);
+  navItems.push(["account", "Account"]);
 
   shell.innerHTML = `
     <div class="admin-shell">
@@ -268,6 +285,7 @@ function renderSection(){
   else if (state.section === "students") renderStudentsSection(main);
   else if (state.section === "progress") renderProgressSection(main);
   else if (state.section === "calendar") renderCalendarSection(main);
+  else if (state.section === "account") renderAccountSection(main);
 }
 
 /* ---------------- Users section ---------------- */
@@ -620,6 +638,93 @@ function openEventModal(existingEvent){
       closeModal();
       toast(isEdit ? "Lesson updated." : "Lesson scheduled.");
     }catch(err){ alert(err.message); }
+  });
+}
+
+/* ---------------- Account section ---------------- */
+function renderAccountSection(main){
+  const providerId = (auth.currentUser && auth.currentUser.providerData[0] && auth.currentUser.providerData[0].providerId) || "";
+  const isPasswordAccount = providerId === "password";
+  const providerLabel = providerId === "google.com" ? "Google" : providerId === "apple.com" ? "Apple" : "email & password";
+
+  main.innerHTML = `
+    <section class="panel">
+      <div class="panel-head"><h2>Account</h2></div>
+      <div class="user-row">
+        <div>
+          <span class="user-name">${escapeHtml(me().name || "")}</span>
+          <span class="user-email">${escapeHtml(me().email || "")} &middot; ${escapeHtml(ROLE_LABEL[me().role] || me().role)}</span>
+        </div>
+      </div>
+      ${isPasswordAccount ? `
+        <div class="user-row">
+          <div>
+            <span class="user-name">Password</span>
+            <span class="user-email">We'll email you a link to set a new one.</span>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="acctResetPw">Send reset email</button>
+        </div>
+        <div class="user-row">
+          <div>
+            <span class="user-name">Email address</span>
+            <span class="user-email">Sends a confirmation link to your new address.</span>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="acctChangeEmail">Change email</button>
+        </div>
+      ` : `
+        <div class="user-row">
+          <div>
+            <span class="user-name">Signed in with ${escapeHtml(providerLabel)}</span>
+            <span class="user-email">Your email and password are managed there, not here.</span>
+          </div>
+        </div>
+      `}
+      <div class="user-row">
+        <div>
+          <span class="user-name">Sign out</span>
+          <span class="user-email">End your session on this device.</span>
+        </div>
+        <button class="btn btn-danger btn-sm" id="acctSignOut">Sign out</button>
+      </div>
+    </section>`;
+
+  const resetBtn = $("acctResetPw");
+  if (resetBtn) resetBtn.addEventListener("click", () => sendReset(me().email));
+  const changeBtn = $("acctChangeEmail");
+  if (changeBtn) changeBtn.addEventListener("click", openChangeEmailModal);
+  $("acctSignOut").addEventListener("click", () => window.TTE_signOut && window.TTE_signOut());
+}
+
+function openChangeEmailModal(){
+  const modalRoot = $("modalRoot");
+  modalRoot.innerHTML = `
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <h2>Change email</h2>
+        <p class="panel-sub">Confirm your current password, then click the link we send to the new address to finish — nothing changes until you do.</p>
+        <form id="emailForm" class="auth-form">
+          <label class="auth-label">New email</label>
+          <input class="auth-input" id="newEmailInput" type="email" required value="${escapeHtml(me().email || "")}">
+          <label class="auth-label">Current password</label>
+          <input class="auth-input" id="currentPwInput" type="password" required autocomplete="current-password">
+          <div class="modal-actions">
+            <button type="button" class="btn btn-ghost" id="emailCancel">Cancel</button>
+            <button type="submit" class="btn btn-accent">Change email</button>
+          </div>
+        </form>
+      </div>
+    </div>`;
+  $("emailCancel").addEventListener("click", closeModal);
+  $("emailForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const newEmail = $("newEmailInput").value.trim();
+    const currentPassword = $("currentPwInput").value;
+    try{
+      await changeEmail(newEmail, currentPassword);
+      closeModal();
+    }catch(err){
+      alert(err.message);
+    }
   });
 }
 

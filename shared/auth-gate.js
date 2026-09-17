@@ -271,7 +271,12 @@ function renderWrongApp(profile){
 /* ---------------- Wiring into the host app ---------------- */
 function mountApp(user, profile){
   showAppShell(true);
-  window.TTE_user = { uid: user.uid, name: profile.name, email: profile.email, role: profile.role, teacherId: profile.teacherId || null };
+  // auth.currentUser.email is the source of truth (e.g. after someone
+  // completes a verifyBeforeUpdateEmail link, it changes there first);
+  // reconcile the database copy whenever the two drift apart, rather
+  // than writing it eagerly at change-email time before it's confirmed.
+  const email = user.email || profile.email;
+  window.TTE_user = { uid: user.uid, name: profile.name, email, role: profile.role, teacherId: profile.teacherId || null };
   // Non-student roles get a voluntary link to the admin dashboard (shown
   // in the host app's own UI, e.g. Settings) — they are never forced
   // there. Only appKind "main" ever has a role other than student mount
@@ -282,7 +287,9 @@ function mountApp(user, profile){
   window.TTE_syncProgress = (progress) => {
     set(ref(db, "progress/" + user.uid), Object.assign({}, progress, { updatedAt: serverTimestamp() })).catch(() => {});
   };
-  update(ref(db, "users/" + user.uid), { lastActive: serverTimestamp() }).catch(() => {});
+  const heartbeat = { lastActive: serverTimestamp() };
+  if (email && email !== profile.email) heartbeat.email = email;
+  update(ref(db, "users/" + user.uid), heartbeat).catch(() => {});
 
   if (!window.TTE_mounted){
     window.TTE_mounted = true;

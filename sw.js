@@ -5,13 +5,14 @@
  * hit the network (auth, database reads/writes) — this dashboard's whole
  * purpose is live data, so it isn't meant to work fully offline.
  */
-const CACHE_NAME = "tta-shell-v2";
+const CACHE_NAME = "tta-shell-v3";
 const CORE_ASSETS = [
   "./",
   "./index.html",
   "./admin.js",
   "./manifest.json",
   "./shared/tokens.css",
+  "./shared/i18n.js",
   "./shared/theme.css",
   "./shared/firebase.js",
   "./shared/firebase-config.js",

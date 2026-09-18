@@ -26,6 +26,10 @@ import {
 const GOOGLE_ICON = `<svg viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.1 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.5 16 18.9 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.1 29.6 4 24 4c-7.6 0-14.1 4.3-17.4 10.7z"/><path fill="#4CAF50" d="M24 44c5.5 0 10.5-2.1 14.2-5.6l-6.6-5.6C29.6 34.8 26.9 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.6 5.1C9.8 39.6 16.3 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.3-4.1 5.7l6.6 5.6C39.9 37.4 44 31.4 44 24c0-1.3-.1-2.7-.4-3.5z"/></svg>`;
 const APPLE_ICON = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.365 1.43c0 1.14-.415 2.09-1.244 2.86-.997.914-2.03 1.44-3.15 1.35-.075-1.09.435-2.14 1.235-2.87.87-.79 2.14-1.34 3.05-1.34.03 0 .07 0 .11 0zM20.36 17.02c-.494 1.13-.73 1.635-1.36 2.63-.884 1.395-2.13 3.13-3.68 3.145-1.38.014-1.735-.9-3.605-.885-1.87.014-2.26.9-3.64.885-1.55-.015-2.73-1.585-3.615-2.98C1.9 16.75 1.62 12.3 3.02 9.93c.99-1.665 2.55-2.64 4.005-2.64 1.48 0 2.415.9 3.64.9 1.19 0 1.92-.9 3.64-.9 1.3 0 2.68.71 3.665 1.935-3.22 1.765-2.7 6.36.39 7.795z"/></svg>`;
 
+// Interface text goes through shared/i18n.js (window.TT_t); falls back to
+// the English key if that script isn't loaded.
+const T = (k, v) => (window.TT_t ? window.TT_t(k, v) : String(k).replace(/\{(\w+)\}/g, (m, x) => (v && v[x] != null ? v[x] : m)));
+let redraw = null;   // re-renders whichever gate screen is showing, when the language changes
 const ROLE_LABEL = { owner: "Owner", manager: "Manager", teacher: "Teacher", student: "Student" };
 
 let opts = null;
@@ -46,6 +50,24 @@ function root(){
     el.id = "authRoot";
     document.body.prepend(el);
   }
+  if (!el.dataset.langWired){
+    el.dataset.langWired = "1";
+    // Every gate screen gets the EN | UZ | RU switch at the top of its card.
+    const addLang = () => {
+      const card = el.querySelector(".auth-card");
+      if (!card || card.querySelector(".auth-lang") || !window.TT_langSwitchHtml) return;
+      const bar = document.createElement("div");
+      bar.className = "auth-lang";
+      bar.innerHTML = window.TT_langSwitchHtml();
+      card.prepend(bar);
+      window.TT_bindLangSwitch(bar);
+    };
+    new MutationObserver(addLang).observe(el, { childList: true });
+    if (window.TT_onLang) window.TT_onLang(() => {
+      const shell = document.getElementById("appShell");
+      if (redraw && !(shell && !shell.hidden)) redraw();   // never paint a gate screen over the running app
+    });
+  }
   return el;
 }
 
@@ -59,19 +81,19 @@ function showAppShell(show){
 function mapAuthError(err){
   const code = err && err.code;
   const map = {
-    "auth/email-already-in-use": "That email already has an account. Try signing in instead.",
-    "auth/invalid-email": "That doesn't look like a valid email address.",
-    "auth/weak-password": "Password must be at least 6 characters.",
-    "auth/wrong-password": "Incorrect password.",
-    "auth/user-not-found": "No account found with that email.",
-    "auth/invalid-credential": "Incorrect email or password.",
-    "auth/too-many-requests": "Too many attempts. Please wait a moment and try again.",
-    "auth/popup-closed-by-user": "Sign-in was cancelled.",
-    "auth/cancelled-popup-request": "Sign-in was cancelled.",
-    "auth/account-exists-with-different-credential": "An account already exists with this email using a different sign-in method.",
-    "auth/operation-not-allowed": "This sign-in method isn't turned on yet — ask the owner to enable it in Firebase.",
+    "auth/email-already-in-use": T("That email already has an account. Try signing in instead."),
+    "auth/invalid-email": T("That doesn't look like a valid email address."),
+    "auth/weak-password": T("Password must be at least 6 characters."),
+    "auth/wrong-password": T("Incorrect password."),
+    "auth/user-not-found": T("No account found with that email."),
+    "auth/invalid-credential": T("Incorrect email or password."),
+    "auth/too-many-requests": T("Too many attempts. Please wait a moment and try again."),
+    "auth/popup-closed-by-user": T("Sign-in was cancelled."),
+    "auth/cancelled-popup-request": T("Sign-in was cancelled."),
+    "auth/account-exists-with-different-credential": T("An account already exists with this email using a different sign-in method."),
+    "auth/operation-not-allowed": T("This sign-in method isn't turned on yet — ask the owner to enable it in Firebase."),
   };
-  return map[code] || (err && err.message) || "Something went wrong. Please try again.";
+  return map[code] || (err && err.message) || T("Something went wrong. Please try again.");
 }
 
 /* ---------------- Not configured ---------------- */
@@ -86,39 +108,40 @@ function renderNotConfigured(){
 
 /* ---------------- Sign in / sign up / reset ---------------- */
 function renderAuthScreen(){
+  redraw = renderAuthScreen;
   const isSignup = mode === "signup";
   const isReset = mode === "reset";
 
   root().innerHTML = `
     <div class="auth-screen"><div class="auth-card">
       <span class="auth-brand">TRUCK TALK</span>
-      <h1 class="auth-title">${isReset ? "Reset your password" : isSignup ? "Create your account" : "Sign in"}</h1>
-      <p class="auth-sub">${isReset ? "We'll email you a reset link." : "New accounts need owner or manager approval before you get access."}</p>
+      <h1 class="auth-title">${isReset ? T("Reset your password") : isSignup ? T("Create your account") : T("Sign in")}</h1>
+      <p class="auth-sub">${isReset ? T("We'll email you a reset link.") : T("New accounts need owner or manager approval before you get access.")}</p>
       ${errorMsg ? `<div class="auth-error">${escapeHtml(errorMsg)}</div>` : ""}
       ${!isReset ? `
         <div class="auth-providers">
-          <button type="button" class="auth-btn-provider" id="googleBtn" ${busy ? "disabled" : ""}>${GOOGLE_ICON}<span>Continue with Google</span></button>
-          <button type="button" class="auth-btn-provider" id="appleBtn" ${busy ? "disabled" : ""}>${APPLE_ICON}<span>Continue with Apple</span></button>
+          <button type="button" class="auth-btn-provider" id="googleBtn" ${busy ? "disabled" : ""}>${GOOGLE_ICON}<span>${T("Continue with Google")}</span></button>
+          <button type="button" class="auth-btn-provider" id="appleBtn" ${busy ? "disabled" : ""}>${APPLE_ICON}<span>${T("Continue with Apple")}</span></button>
         </div>
-        <div class="auth-divider">or</div>
+        <div class="auth-divider">${T("or")}</div>
       ` : ""}
       <form id="authForm" class="auth-form">
-        <label class="auth-label" for="authEmail">Email</label>
+        <label class="auth-label" for="authEmail">${T("Email")}</label>
         <input class="auth-input" id="authEmail" type="email" autocomplete="email" required>
         ${!isReset ? `
-          <label class="auth-label" for="authPassword">Password</label>
+          <label class="auth-label" for="authPassword">${T("Password")}</label>
           <input class="auth-input" id="authPassword" type="password" autocomplete="${isSignup ? "new-password" : "current-password"}" required minlength="6">
         ` : ""}
         <button class="btn btn-accent" type="submit" style="margin-top:14px;width:100%;" ${busy ? "disabled" : ""}>
-          ${busy ? "Please wait…" : isReset ? "Send reset link" : isSignup ? "Create account" : "Sign in with email"}
+          ${busy ? T("Please wait…") : isReset ? T("Send reset link") : isSignup ? T("Create account") : T("Sign in with email")}
         </button>
       </form>
       <div class="auth-links">
         ${isReset
-          ? `<button class="auth-link-btn" data-mode="signin">Back to sign in</button>`
+          ? `<button class="auth-link-btn" data-mode="signin">${T("Back to sign in")}</button>`
           : isSignup
-            ? `<button class="auth-link-btn" data-mode="signin">Already have an account? Sign in</button>`
-            : `<button class="auth-link-btn" data-mode="signup">Create an account with email</button><button class="auth-link-btn" data-mode="reset">Forgot password?</button>`}
+            ? `<button class="auth-link-btn" data-mode="signin">${T("Already have an account? Sign in")}</button>`
+            : `<button class="auth-link-btn" data-mode="signup">${T("Create an account with email")}</button><button class="auth-link-btn" data-mode="reset">${T("Forgot password?")}</button>`}
       </div>
     </div></div>`;
 
@@ -155,7 +178,7 @@ async function signInWithGoogle(){
   try{
     const result = await window.__ttNativeAuth.signInWithGoogle();
     const idToken = result && result.credential && result.credential.idToken;
-    if (!idToken) throw new Error("Google sign-in did not return a credential.");
+    if (!idToken) throw new Error(T("Google sign-in did not return a credential."));
     await signInWithCredential(auth, GoogleAuthProvider.credential(idToken));
   }catch(err){
     busy = false; errorMsg = mapAuthError(err); renderAuthScreen();
@@ -176,7 +199,7 @@ async function onEmailAuthSubmit(e){
       await sendPasswordResetEmail(auth, email);
       busy = false; mode = "signin"; errorMsg = "";
       renderAuthScreen();
-      alert("Password reset email sent — check your inbox.");
+      alert(T("Password reset email sent — check your inbox."));
       return;
     } else {
       await signInWithEmailAndPassword(auth, email, password);
@@ -188,18 +211,19 @@ async function onEmailAuthSubmit(e){
 
 /* ---------------- Complete profile → request access ---------------- */
 function renderCompleteProfile(user){
+  redraw = () => renderCompleteProfile(user);
   root().innerHTML = `
     <div class="auth-screen"><div class="auth-card">
       <span class="auth-brand">TRUCK TALK</span>
-      <h1 class="auth-title">Complete your profile</h1>
-      <p class="auth-sub">Tell us your name, then request access. An owner or manager will review your request — you'll get in as soon as they approve it.</p>
+      <h1 class="auth-title">${T("Complete your profile")}</h1>
+      <p class="auth-sub">${T("Tell us your name, then request access. An owner or manager will review your request — you'll get in as soon as they approve it.")}</p>
       ${errorMsg ? `<div class="auth-error">${escapeHtml(errorMsg)}</div>` : ""}
       <form id="profileForm" class="auth-form">
-        <label class="auth-label" for="profName">Full name</label>
+        <label class="auth-label" for="profName">${T("Full name")}</label>
         <input class="auth-input" id="profName" type="text" value="${escapeHtml(user.displayName || "")}" required>
-        <button class="btn btn-accent" type="submit" style="margin-top:14px;width:100%;" ${busy ? "disabled" : ""}>${busy ? "Please wait…" : "Request access"}</button>
+        <button class="btn btn-accent" type="submit" style="margin-top:14px;width:100%;" ${busy ? "disabled" : ""}>${busy ? T("Please wait…") : T("Request access")}</button>
       </form>
-      <div class="auth-links"><button class="auth-link-btn" id="cancelProfileBtn">Sign out</button></div>
+      <div class="auth-links"><button class="auth-link-btn" id="cancelProfileBtn">${T("Sign out")}</button></div>
     </div></div>`;
 
   $("profileForm").addEventListener("submit", async (e) => {
@@ -237,30 +261,33 @@ async function requestAccess(user, name){
 
 /* ---------------- Pending / restricted / wrong-app screens ---------------- */
 function renderPending(profile){
+  redraw = () => renderPending(profile);
   root().innerHTML = `
     <div class="auth-screen"><div class="auth-card">
       <span class="auth-brand">TRUCK TALK</span>
-      <h1 class="auth-title">Awaiting approval</h1>
-      <p class="auth-sub">Thanks, ${escapeHtml(profile.name || "")} — your request is in. An owner or manager needs to approve it before you can get in. This page updates automatically, no need to refresh.</p>
-      <button class="btn btn-ghost btn-sm" id="pendingSignOut">Sign out</button>
+      <h1 class="auth-title">${T("Awaiting approval")}</h1>
+      <p class="auth-sub">${T("Thanks, {name} — your request is in. An owner or manager needs to approve it before you can get in. This page updates automatically, no need to refresh.", { name: escapeHtml(profile.name || "") })}</p>
+      <button class="btn btn-ghost btn-sm" id="pendingSignOut">${T("Sign out")}</button>
     </div></div>`;
   $("pendingSignOut").addEventListener("click", () => signOut(auth));
 }
 
 function renderRestricted(){
+  redraw = renderRestricted;
   root().innerHTML = `
     <div class="auth-screen"><div class="auth-card">
       <span class="auth-brand">TRUCK TALK</span>
-      <h1 class="auth-title">Access restricted</h1>
-      <p class="auth-sub">Your access to this platform has been turned off. Contact your owner or manager if you think this is a mistake.</p>
-      <button class="btn btn-ghost btn-sm" id="restrictedSignOut">Sign out</button>
+      <h1 class="auth-title">${T("Access restricted")}</h1>
+      <p class="auth-sub">${T("Your access to this platform has been turned off. Contact your owner or manager if you think this is a mistake.")}</p>
+      <button class="btn btn-ghost btn-sm" id="restrictedSignOut">${T("Sign out")}</button>
     </div></div>`;
   $("restrictedSignOut").addEventListener("click", () => signOut(auth));
 }
 
 function renderWrongApp(profile){
+  redraw = () => renderWrongApp(profile);
   const forAdmin = opts.appKind === "main"; // signed into the course, but role isn't student
-  const label = ROLE_LABEL[profile.role] || profile.role;
+  const label = ROLE_LABEL[profile.role] ? T(ROLE_LABEL[profile.role]) : profile.role;
   const targetUrl = forAdmin ? opts.adminUrl : opts.mainUrl;
 
   if (targetUrl){
@@ -270,9 +297,9 @@ function renderWrongApp(profile){
     root().innerHTML = `
       <div class="auth-screen"><div class="auth-card">
         <span class="auth-brand">TRUCK TALK</span>
-        <h1 class="auth-title">Redirecting…</h1>
-        <p class="auth-sub">Taking you to ${forAdmin ? "the admin dashboard" : "the course"}.</p>
-        <div class="auth-links"><button class="auth-link-btn" id="wrongAppSignOut">Wrong account? Sign out</button></div>
+        <h1 class="auth-title">${T("Redirecting…")}</h1>
+        <p class="auth-sub">${forAdmin ? T("Taking you to the admin dashboard.") : T("Taking you to the course.")}</p>
+        <div class="auth-links"><button class="auth-link-btn" id="wrongAppSignOut">${T("Wrong account? Sign out")}</button></div>
       </div></div>`;
     $("wrongAppSignOut").addEventListener("click", () => signOut(auth));
     window.location.replace(targetUrl);
@@ -283,16 +310,17 @@ function renderWrongApp(profile){
     <div class="auth-screen"><div class="auth-card">
       <span class="auth-brand">TRUCK TALK</span>
       <span class="auth-role-pill">${escapeHtml(label)}</span>
-      <h1 class="auth-title">${forAdmin ? "This is the student course" : "This is the admin dashboard"}</h1>
-      <p class="auth-sub">${forAdmin ? `Your account is a ${label.toLowerCase()} account — head to the admin dashboard instead.` : "Your account is a student account — head back to the course."}</p>
-      <div class="auth-notice">${forAdmin ? "Ask your owner or manager for the admin dashboard link." : "Ask your owner or manager for the course link."}</div>
-      <div class="auth-links"><button class="auth-link-btn" id="wrongAppSignOut">Sign out</button></div>
+      <h1 class="auth-title">${forAdmin ? T("This is the student course") : T("This is the admin dashboard")}</h1>
+      <p class="auth-sub">${forAdmin ? T("Your account is a {role} account — head to the admin dashboard instead.", { role: label.toLowerCase() }) : T("Your account is a student account — head back to the course.")}</p>
+      <div class="auth-notice">${forAdmin ? T("Ask your owner or manager for the admin dashboard link.") : T("Ask your owner or manager for the course link.")}</div>
+      <div class="auth-links"><button class="auth-link-btn" id="wrongAppSignOut">${T("Sign out")}</button></div>
     </div></div>`;
   $("wrongAppSignOut").addEventListener("click", () => signOut(auth));
 }
 
 /* ---------------- Wiring into the host app ---------------- */
 function mountApp(user, profile){
+  redraw = null;   // the gate is done; a language change now belongs to the host app
   showAppShell(true);
   // auth.currentUser.email is the source of truth (e.g. after someone
   // completes a verifyBeforeUpdateEmail link, it changes there first);

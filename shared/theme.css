@@ -83,3 +83,16 @@
   background:var(--danger); color:#fff; font-family:var(--font-mono);
   font-size:0.68rem; font-weight:700; line-height:18px;
 }
+
+/* Language switch (EN | UZ | RU) — used in the app header, the gate cards and Settings */
+.lang-switch{
+  display:inline-flex; gap:2px; padding:3px; border-radius:99px;
+  background:var(--surface-2); border:1px solid var(--line);
+}
+.lang-switch button{
+  border:none; background:none; color:var(--muted); cursor:pointer;
+  font-family:var(--font-mono,monospace); font-size:0.74rem; font-weight:600; letter-spacing:0.04em;
+  min-width:38px; min-height:32px; padding:0 8px; border-radius:99px;
+}
+.lang-switch button.active{ background:var(--accent); color:var(--accent-ink); }
+.auth-lang{ display:flex; justify-content:flex-end; margin:-12px -12px 6px 0; }

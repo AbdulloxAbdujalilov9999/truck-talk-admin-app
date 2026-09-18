@@ -16,7 +16,7 @@
 import { auth, db, googleProvider, appleProvider, isFirebaseConfigured } from "./firebase.js";
 import { OWNER_EMAIL } from "./firebase-config.js";
 import {
-  onAuthStateChanged, signInWithPopup, signOut,
+  onAuthStateChanged, signInWithPopup, signInWithCredential, GoogleAuthProvider, signOut,
   createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail,
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 import {
@@ -123,7 +123,7 @@ function renderAuthScreen(){
     </div></div>`;
 
   $("authForm").addEventListener("submit", onEmailAuthSubmit);
-  const g = $("googleBtn"); if (g) g.addEventListener("click", () => signInWithProvider(googleProvider));
+  const g = $("googleBtn"); if (g) g.addEventListener("click", signInWithGoogle);
   const a = $("appleBtn"); if (a) a.addEventListener("click", () => signInWithProvider(appleProvider));
   root().querySelectorAll("[data-mode]").forEach(btn => {
     btn.addEventListener("click", () => { mode = btn.dataset.mode; errorMsg = ""; renderAuthScreen(); });
@@ -134,6 +134,29 @@ async function signInWithProvider(provider){
   errorMsg = ""; busy = true; renderAuthScreen();
   try{
     await signInWithPopup(auth, provider);
+  }catch(err){
+    busy = false; errorMsg = mapAuthError(err); renderAuthScreen();
+  }
+}
+
+// Inside the Capacitor Android app, window.__ttNativeAuth is set by
+// vendor-auth-bridge.js (bundled by android-app's copy-web script) — that
+// file doesn't exist on the live website, so this always falls through to
+// the normal signInWithPopup path there. See native-auth-bridge.js and
+// shared/firebase.js for why the native path needs a separate credential
+// hand-off: Google blocks OAuth popups/redirects inside embedded WebViews,
+// so the native app must sign in through Android's own Google Sign-In SDK
+// and then hand that credential to the Firebase JS SDK manually.
+async function signInWithGoogle(){
+  if (!window.__ttNativeAuth){
+    return signInWithProvider(googleProvider);
+  }
+  errorMsg = ""; busy = true; renderAuthScreen();
+  try{
+    const result = await window.__ttNativeAuth.signInWithGoogle();
+    const idToken = result && result.credential && result.credential.idToken;
+    if (!idToken) throw new Error("Google sign-in did not return a credential.");
+    await signInWithCredential(auth, GoogleAuthProvider.credential(idToken));
   }catch(err){
     busy = false; errorMsg = mapAuthError(err); renderAuthScreen();
   }

@@ -1,0 +1,19 @@
+{
+  "name": "truck-talk-admin-android",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Native Android wrapper for the Truck Talk admin dashboard",
+  "scripts": {
+    "copy-web": "mkdir -p www/icons www/shared && cp ../index.html ../admin.js ../manifest.json ../sw.js www/ && cp ../icons/*.png www/icons/ && cp ../shared/*.js ../shared/*.css www/shared/ && npx esbuild native-auth-bridge.js --bundle --format=iife --external:firebase/auth --outfile=www/vendor-auth-bridge.js && node inject-bridge-tag.js",
+    "sync": "npm run copy-web && cap sync android"
+  },
+  "dependencies": {
+    "@capacitor-firebase/authentication": "^8.5.2",
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}

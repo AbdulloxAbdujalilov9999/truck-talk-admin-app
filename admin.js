@@ -35,6 +35,8 @@ let usersCache = [];
 let usersById = new Map();
 let progressCache = new Map();
 let progressUnsubs = new Map();
+let resetsCache = new Map();   // studentUid -> { id: request }
+let resetsUnsubs = new Map();
 let eventsCache = [];
 let unsubUsers = null;
 let unsubTeacherStudentsIndex = null;
@@ -168,6 +170,58 @@ function syncProgressSubs(uids){
 }
 
 /* ---------------- Writes ---------------- */
+// <option>s for the "reset a lesson" picker. The admin site has no
+// curriculum data of its own, so it falls back to plain day numbers.
+function dayOptions(p, selected){
+  const days = typeof CURRICULUM !== "undefined" ? CURRICULUM.map(d => ({ d: d.d, t: d.t })) : Array.from({ length: 60 }, (_, i) => ({ d: i + 1, t: "" }));
+  return days.map(x => `<option value="${x.d}"${String(x.d) === String(selected) ? " selected" : ""}>Day ${x.d}${x.t ? " — " + escapeHtml(x.t) : ""}${p && p.completed && p.completed[x.d] ? "  ✓" : ""}</option>`).join("");
+}
+
+function syncResetSubs(uid){
+  if (resetsUnsubs.has(uid)) return;
+  const unsub = onValue(ref(db, "resets/" + uid), (snap) => {
+    resetsCache.set(uid, snap.exists() ? snap.val() : {});
+    if (state.section === "progress" && state.selectedStudent === uid && !$("modalRoot").innerHTML) renderSection();
+  }, () => {});
+  resetsUnsubs.set(uid, unsub);
+}
+
+// A reset is a request the student's app applies (see applyRemoteResets in
+// app.js) — staff can't rewrite a student's progress directly.
+async function requestReset(studentUid, kind, key){
+  await push(ref(db, "resets/" + studentUid), {
+    kind, key: String(key), by: me().uid, byName: me().name || "", at: serverTimestamp(),
+  });
+}
+function resetLabel(r){
+  if (r.kind === "lesson") return "Day " + r.key + (dayTitle(Number(r.key)) ? " — " + dayTitle(Number(r.key)) : "");
+  if (r.kind === "homework") return "Homework session #" + (Number(r.key) + 1);
+  if (r.kind === "grammar") return grammarTitle(r.key);
+  return r.kind + " " + r.key;
+}
+function openResetModal(studentUid, kind, key){
+  const student = usersById.get(studentUid);
+  const label = resetLabel({ kind, key });
+  $("modalRoot").innerHTML = `
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <h2>Reset ${escapeHtml(kind === "lesson" ? "lesson" : kind === "homework" ? "homework session" : "grammar unit")}?</h2>
+        <p class="panel-sub"><strong>${escapeHtml(label)}</strong> for <strong>${escapeHtml(student ? student.name : "this student")}</strong>.</p>
+        <p class="panel-sub" style="margin-top:8px;">Their completion, quiz answers and practice for this item are cleared and the XP they earned from it is taken back, so they can do it again. Everything else stays. It applies the next time they open the app (right away if it's already open).</p>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" id="resetCancel">Cancel</button>
+          <button class="btn btn-accent" id="resetConfirm">Reset it</button>
+        </div>
+      </div>
+    </div>`;
+  $("resetCancel").addEventListener("click", closeModal);
+  $("resetConfirm").addEventListener("click", async () => {
+    $("resetConfirm").disabled = true;
+    try{ await requestReset(studentUid, kind, key); closeModal(); toast("Reset requested."); renderSection(); }
+    catch(err){ $("resetConfirm").disabled = false; alert("Couldn't request the reset: " + err.message); }
+  });
+}
+
 async function approveUser(uid, role, teacherId){
   const updates = {
     [`users/${uid}/role`]: role,
@@ -459,7 +513,10 @@ function renderProgressSection(main){
     return;
   }
   syncProgressSubs([state.selectedStudent]);
+  syncResetSubs(state.selectedStudent);
   const p = progressCache.get(state.selectedStudent);
+  const resets = Object.entries(resetsCache.get(state.selectedStudent) || {})
+    .map(([id, r]) => ({ id, ...r })).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 8);
 
   const completed = p ? Object.entries(p.completed || {}).map(([day, info]) => ({ day: Number(day), ...info })).sort((a, b) => a.day - b.day) : [];
   const homework = p ? Object.entries(p.homeworkDone || {}).map(([n, info]) => ({ n: Number(n), ...info })).sort((a, b) => a.n - b.n) : [];
@@ -485,27 +542,47 @@ function renderProgressSection(main){
     </section>
 
     <section class="panel">
+      <div class="panel-head">
+        <h2>Reset a lesson</h2>
+        <p class="panel-sub">Clears one lesson for ${escapeHtml(student.name)} — completion, quiz, practice and role-play — so they can redo it. Nothing else is touched.</p>
+      </div>
+      <div class="reset-row">
+        <select class="select" id="resetDaySelect">
+          ${dayOptions(p, state.resetDay)}
+        </select>
+        <button class="btn btn-accent" id="resetDayBtn">Reset this lesson</button>
+      </div>
+      ${resets.length ? `<div class="reset-log">
+        <p class="panel-sub" style="margin:14px 0 6px;">Recent resets</p>
+        ${resets.map(r => `<div class="reset-log-row"><span>${escapeHtml(resetLabel(r))}</span><span class="panel-sub">${r.appliedAt ? "applied" : "waiting for the student to open the app"}${r.byName ? " · by " + escapeHtml(r.byName) : ""}</span></div>`).join("")}
+      </div>` : ""}
+    </section>
+
+    <section class="panel">
       <div class="panel-head"><h2>Lessons completed (${completed.length})</h2></div>
-      ${completed.length ? `<div class="table-wrap"><table class="admin-table"><thead><tr><th>Day</th><th>Title</th><th>Date</th><th>Score</th></tr></thead><tbody>
-        ${completed.map(c => `<tr><td>${c.day}</td><td>${escapeHtml(dayTitle(c.day))}</td><td class="mono">${escapeHtml(c.date)}</td><td class="mono">${c.score}%</td></tr>`).join("")}
+      ${completed.length ? `<div class="table-wrap"><table class="admin-table"><thead><tr><th>Day</th><th>Title</th><th>Date</th><th>Score</th><th></th></tr></thead><tbody>
+        ${completed.map(c => `<tr><td>${c.day}</td><td>${escapeHtml(dayTitle(c.day))}</td><td class="mono">${escapeHtml(c.date)}</td><td class="mono">${c.score}%</td><td><button class="btn btn-ghost btn-sm" data-reset="lesson" data-key="${c.day}">Reset</button></td></tr>`).join("")}
       </tbody></table></div>` : `<p class="panel-sub">No lessons completed yet.</p>`}
     </section>
 
     <section class="panel">
       <div class="panel-head"><h2>Homework completed (${homework.length})</h2></div>
-      ${homework.length ? `<div class="table-wrap"><table class="admin-table"><thead><tr><th>Session</th><th>Date</th><th>Score</th></tr></thead><tbody>
-        ${homework.map(h => `<tr><td>#${h.n + 1}</td><td class="mono">${escapeHtml(h.date)}</td><td class="mono">${h.score}%</td></tr>`).join("")}
+      ${homework.length ? `<div class="table-wrap"><table class="admin-table"><thead><tr><th>Session</th><th>Date</th><th>Score</th><th></th></tr></thead><tbody>
+        ${homework.map(h => `<tr><td>#${h.n + 1}</td><td class="mono">${escapeHtml(h.date)}</td><td class="mono">${h.score}%</td><td><button class="btn btn-ghost btn-sm" data-reset="homework" data-key="${h.n}">Reset</button></td></tr>`).join("")}
       </tbody></table></div>` : `<p class="panel-sub">No homework completed yet.</p>`}
     </section>
 
     <section class="panel">
       <div class="panel-head"><h2>Grammar units completed (${grammarDone.length})</h2></div>
-      ${grammarDone.length ? `<div class="table-wrap"><table class="admin-table"><thead><tr><th>Unit</th><th>Date</th><th>Score</th></tr></thead><tbody>
-        ${grammarDone.map(g => `<tr><td>${escapeHtml(grammarTitle(g.id))}</td><td class="mono">${escapeHtml(g.date)}</td><td class="mono">${g.score}%</td></tr>`).join("")}
+      ${grammarDone.length ? `<div class="table-wrap"><table class="admin-table"><thead><tr><th>Unit</th><th>Date</th><th>Score</th><th></th></tr></thead><tbody>
+        ${grammarDone.map(g => `<tr><td>${escapeHtml(grammarTitle(g.id))}</td><td class="mono">${escapeHtml(g.date)}</td><td class="mono">${g.score}%</td><td><button class="btn btn-ghost btn-sm" data-reset="grammar" data-key="${escapeHtml(g.id)}">Reset</button></td></tr>`).join("")}
       </tbody></table></div>` : `<p class="panel-sub">No grammar units completed yet.</p>`}
     </section>`;
 
   $("backToPick").addEventListener("click", () => setSection("progress", { selectedStudent: null }));
+  $("resetDaySelect").addEventListener("change", (e) => { state.resetDay = e.target.value; });
+  $("resetDayBtn").addEventListener("click", () => openResetModal(state.selectedStudent, "lesson", $("resetDaySelect").value));
+  main.querySelectorAll("[data-reset]").forEach(btn => btn.addEventListener("click", () => openResetModal(state.selectedStudent, btn.dataset.reset, btn.dataset.key)));
 }
 
 /* ---------------- Calendar section ---------------- */

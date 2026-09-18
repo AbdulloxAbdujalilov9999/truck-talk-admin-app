@@ -1,69 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Truck Talk Admin</title>
+<meta name="theme-color" content="#1A3D63" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0D2140" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#1C1B18">
-<link rel="icon" href="icons/icon-192.png">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="TT Admin">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="shared/tokens.css">
 <link rel="stylesheet" href="shared/theme.css">
 <style>
-  /* ---------- Tokens (copied from ../index.html — keep in sync by eye,
-     not by import, so the course site's CSS stays untouched) ---------- */
-  :root{
-    --paper:#F4F1E8;
-    --surface:#FFFFFF;
-    --surface-2:#EAE5D7;
-    --ink:#1C1B18;
-    --muted:#6B6459;
-    --line:#DAD4C5;
-    --accent:#E2691B;
-    --accent-ink:#FFFFFF;
-    --accent-2:#2E7D52;
-    --danger:#B3402F;
-    --shadow: 0 1px 2px rgba(28,27,24,0.06), 0 4px 14px rgba(28,27,24,0.06);
-    --radius-s: 3px;
-    --radius-m: 6px;
-    --font-display: 'Oswald', 'Arial Narrow', sans-serif;
-    --font-body: 'Inter', -apple-system, 'Segoe UI', sans-serif;
-    --font-mono: 'IBM Plex Mono', 'Consolas', monospace;
-  }
-  @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]){
-      --paper:#171816;
-      --surface:#1F211F;
-      --surface-2:#262824;
-      --ink:#EDE8DC;
-      --muted:#9C9488;
-      --line:#34322C;
-      --accent:#F0973C;
-      --accent-ink:#1C1B18;
-      --accent-2:#4CAF7D;
-      --danger:#E27A68;
-      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 4px 14px rgba(0,0,0,0.3);
-    }
-  }
-  :root[data-theme="dark"]{
-    --paper:#171816;
-    --surface:#1F211F;
-    --surface-2:#262824;
-    --ink:#EDE8DC;
-    --muted:#9C9488;
-    --line:#34322C;
-    --accent:#F0973C;
-    --accent-ink:#1C1B18;
-    --accent-2:#4CAF7D;
-    --danger:#E27A68;
-    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 4px 14px rgba(0,0,0,0.3);
-  }
-
   *{ box-sizing:border-box; }
   body{
     margin:0; background:var(--paper); color:var(--ink);
-    font-family:var(--font-body); font-size:15px; line-height:1.55;
+    font-family:var(--font-body); font-size:16px; line-height:1.55;
   }
-  h1,h2,h3{ font-family:var(--font-display); text-transform:uppercase; letter-spacing:0.02em; text-wrap:balance; margin:0; }
+  h1,h2,h3{ font-family:var(--font-display); text-wrap:balance; margin:0; font-weight:600; }
   .mono{ font-family:var(--font-mono); font-variant-numeric:tabular-nums; }
   img{ max-width:100%; }
   [hidden]{ display:none !important; }
@@ -79,18 +39,18 @@
 
   /* ---------- Buttons / form controls (same look as the course site) ---------- */
   .btn{
-    font-family:var(--font-display); text-transform:uppercase; letter-spacing:0.03em; font-size:0.85rem;
-    border-radius:var(--radius-s); border:2px solid var(--ink); padding:10px 18px; min-height:44px;
+    font-family:var(--font-body); font-weight:600; font-size:0.92rem;
+    border-radius:12px; border:1.5px solid var(--line); padding:10px 18px; min-height:46px;
     background:var(--surface); color:var(--ink);
   }
   .btn:disabled{ opacity:0.4; cursor:not-allowed; }
   .btn-accent{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
   .btn-accent:hover:not(:disabled){ filter:brightness(1.05); }
   .btn-ghost{ background:transparent; border-color:var(--line); color:var(--ink); }
-  .btn-ghost:hover:not(:disabled){ border-color:var(--ink); }
+  .btn-ghost:hover:not(:disabled){ border-color:var(--accent-mid); }
   .btn-danger{ background:transparent; border-color:var(--danger); color:var(--danger); }
   .btn-danger:hover{ background:var(--danger); color:var(--surface); }
-  .btn-sm{ padding:6px 12px; font-size:0.75rem; min-height:auto; }
+  .btn-sm{ padding:7px 14px; font-size:0.82rem; min-height:38px; border-radius:10px; }
   .select{ padding:8px 10px; border-radius:var(--radius-s); border:1px solid var(--line); background:var(--surface); color:var(--ink); font-family:var(--font-body); }
 
   .stat-tile{
@@ -120,8 +80,8 @@
   .admin-nav-btn{
     display:flex; align-items:center; justify-content:space-between; gap:8px;
     background:none; border:none; color:var(--muted); text-align:left;
-    font-family:var(--font-display); text-transform:uppercase; letter-spacing:0.04em; font-size:0.85rem;
-    padding:11px 12px; border-radius:var(--radius-s);
+    font-family:var(--font-body); font-weight:600; font-size:0.92rem;
+    padding:11px 12px; border-radius:12px;
   }
   .admin-nav-btn:hover{ background:var(--surface-2); color:var(--ink); }
   .admin-nav-btn.active{ background:var(--ink); color:var(--accent-ink); }
@@ -171,6 +131,10 @@
   .status-approved{ background:var(--accent-2); color:#fff; }
   .status-restricted{ background:var(--danger); color:#fff; }
   .role-owner{ background:var(--ink); color:var(--accent-ink); }
+
+  .reset-row{ display:flex; gap:10px; flex-wrap:wrap; }
+  .reset-row .select{ flex:1 1 260px; min-width:0; }
+  .reset-log-row{ display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:8px 0; border-top:1px solid var(--line); font-size:0.9rem; }
 
   /* ---------- Tables ---------- */
   .table-wrap{ overflow-x:auto; }
@@ -223,6 +187,8 @@
   #toast.show{ opacity:1; transform:translate(-50%,0); }
 </style>
 
+</head>
+<body>
 <div id="authRoot"></div>
 
 <div id="appShell" hidden></div>
@@ -236,3 +202,5 @@
     window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
   }
 </script>
+</body>
+</html>

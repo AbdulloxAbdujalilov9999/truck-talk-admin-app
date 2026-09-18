@@ -41,6 +41,21 @@
       }
     },
 
+    // Lesson resets. Staff (owner, manager, or the student's own teacher)
+    // create a request; the student's app applies it and stamps appliedAt
+    // (the only thing a student may write, and only on an existing request).
+    // Requests can't be edited or deleted by the student.
+    "resets": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || (auth != null && root.child('users').child(auth.uid).child('status').val() === 'approved' && (root.child('users').child(auth.uid).child('role').val() === 'owner' || root.child('users').child(auth.uid).child('role').val() === 'manager' || (root.child('users').child(auth.uid).child('role').val() === 'teacher' && root.child('users').child($uid).child('teacherId').val() === auth.uid))))",
+        "$rid": {
+          ".write": "auth != null && root.child('users').child(auth.uid).child('status').val() === 'approved' && (root.child('users').child(auth.uid).child('role').val() === 'owner' || root.child('users').child(auth.uid).child('role').val() === 'manager' || (root.child('users').child(auth.uid).child('role').val() === 'teacher' && root.child('users').child($uid).child('teacherId').val() === auth.uid))",
+          ".validate": "newData.hasChildren(['kind', 'key', 'by', 'at']) && (newData.child('kind').val() === 'lesson' || newData.child('kind').val() === 'homework' || newData.child('kind').val() === 'grammar')",
+          "appliedAt": { ".write": "auth != null && auth.uid === $uid && data.parent().exists() && !data.exists()" }
+        }
+      }
+    },
+
     // Nested by teacher rather than a flat collection: RTDB has no
     // composite indexes, so "this teacher's events, in order" is just a
     // direct path read (events/{teacherId}) sorted client-side, instead of

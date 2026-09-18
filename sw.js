@@ -5,12 +5,13 @@
  * hit the network (auth, database reads/writes) — this dashboard's whole
  * purpose is live data, so it isn't meant to work fully offline.
  */
-const CACHE_NAME = "tta-shell-v1";
+const CACHE_NAME = "tta-shell-v2";
 const CORE_ASSETS = [
   "./",
   "./index.html",
   "./admin.js",
   "./manifest.json",
+  "./shared/tokens.css",
   "./shared/theme.css",
   "./shared/firebase.js",
   "./shared/firebase-config.js",
@@ -31,24 +32,25 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
+// Network-first: a fresh deploy shows up on the very next open. This
+// dashboard is all live data, so the cache is only an offline fallback for
+// the app shell.
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
-  const url = req.url;
-  if (url.includes("googleapis.com") || url.includes("gstatic.com") || url.includes("firebasedatabase.app") || url.includes("firebaseapp.com")) return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;   // Firebase, fonts, gstatic: the browser handles these
+  if (url.pathname.startsWith("/__/")) return;        // Firebase auth handler proxy
 
   event.respondWith(
-    caches.match(req).then((cached) => {
-      const network = fetch(req)
-        .then((res) => {
-          if (res && res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
-          }
-          return res;
-        })
-        .catch(() => cached);
-      return cached || network;
-    })
+    fetch(req)
+      .then((res) => {
+        if (res && res.ok){
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
+        }
+        return res;
+      })
+      .catch(() => caches.match(req).then((cached) => cached || caches.match("./index.html")))
   );
 });

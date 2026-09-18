@@ -284,6 +284,17 @@ async function changeEmail(newEmail, currentPassword){
 /* ---------------- Shell ---------------- */
 function initialSection(){ return isOwnerOrManager() ? "users" : "students"; }
 
+const NAV_ICONS = {
+  users: '<path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"/><circle cx="10" cy="8" r="3.5"/><path d="M20 20v-1.2a3.2 3.2 0 0 0-2.4-3.1"/><path d="M15.5 4.6a3.5 3.5 0 0 1 0 6.8"/>',
+  students: '<path d="M2 9l10-5 10 5-10 5z"/><path d="M6 11.5V16c0 1.4 2.7 3 6 3s6-1.6 6-3v-4.5"/><path d="M22 9v6"/>',
+  progress: '<path d="M4 20V4"/><path d="M4 20h16"/><rect x="7.5" y="12" width="3" height="5" rx="0.6"/><rect x="12.5" y="8" width="3" height="9" rx="0.6"/><rect x="17.5" y="5" width="2.5" height="12" rx="0.6"/>',
+  calendar: '<rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17"/><path d="M8 3v4M16 3v4"/>',
+  account: '<circle cx="12" cy="8" r="4"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/>',
+};
+function navIcon(id){
+  return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${NAV_ICONS[id] || ""}</svg>`;
+}
+
 function renderShell(){
   const shell = $("appShell");
   const navItems = [];
@@ -293,29 +304,35 @@ function renderShell(){
   navItems.push(["calendar", "Calendar"]);
   navItems.push(["account", "Account"]);
 
+  // Same header + nav pattern as the course site: navy top bar with the nav
+  // inline on desktop, and an app-style bottom tab bar on phones.
   shell.innerHTML = `
     <div class="admin-shell">
-      <aside class="admin-sidebar">
-        <div class="admin-brand">
-          <span class="brand-mark">TRUCK TALK</span>
-          <span class="admin-brand-sub">ADMIN</span>
+      <header class="topbar">
+        <div class="topbar-inner">
+          <div class="brand">
+            <img class="brand-logo" src="icons/icon-192.png" alt="" width="34" height="34">
+            <div class="brand-text">
+              <span class="brand-mark">TRUCK TALK</span>
+              <span class="brand-sub">ADMIN DASHBOARD</span>
+            </div>
+          </div>
+          <nav id="mainNav" aria-label="Main">
+            ${navItems.map(([id, label]) => `
+              <button class="navbtn" data-section="${id}">
+                <span class="nav-icon">${navIcon(id)}</span>
+                <span class="nav-label">${label}</span>
+                ${id === "users" ? `<span class="ttx-badge" id="navUsersBadge" hidden>0</span>` : ""}
+              </button>`).join("")}
+          </nav>
+          <div class="topbar-user">
+            <span class="admin-user-name">${escapeHtml(me().name || me().email)}</span>
+            <span class="admin-role-pill">${escapeHtml(ROLE_LABEL[me().role] || me().role)}</span>
+            <button class="btn btn-ghost btn-sm" id="adminSignOut">Sign out</button>
+          </div>
         </div>
-        <nav class="admin-nav">
-          ${navItems.map(([id, label]) => `
-            <button class="admin-nav-btn" data-section="${id}">
-              <span>${label}</span>
-              ${id === "users" ? `<span class="ttx-badge" id="navUsersBadge" hidden>0</span>` : ""}
-            </button>`).join("")}
-        </nav>
-      </aside>
-      <div class="admin-main">
-        <header class="admin-topbar">
-          <span class="admin-user-name">${escapeHtml(me().name || me().email)}</span>
-          <span class="admin-role-pill">${escapeHtml(ROLE_LABEL[me().role] || me().role)}</span>
-          <button class="btn btn-ghost btn-sm" id="adminSignOut">Sign out</button>
-        </header>
-        <main id="adminApp" class="admin-content"></main>
-      </div>
+      </header>
+      <main id="adminApp" class="admin-content"></main>
     </div>`;
 
   shell.querySelectorAll("[data-section]").forEach(btn => {
@@ -328,7 +345,7 @@ function renderShell(){
 function setSection(section, extra){
   state.section = section;
   Object.assign(state, extra || {});
-  document.querySelectorAll(".admin-nav-btn").forEach(btn => btn.classList.toggle("active", btn.dataset.section === state.section));
+  document.querySelectorAll("#mainNav .navbtn").forEach(btn => btn.classList.toggle("active", btn.dataset.section === state.section));
   renderSection();
 }
 
@@ -340,6 +357,18 @@ function renderSection(){
   else if (state.section === "progress") renderProgressSection(main);
   else if (state.section === "calendar") renderCalendarSection(main);
   else if (state.section === "account") renderAccountSection(main);
+  labelTableCells(main);
+}
+
+// Phones show tables as stacked cards; each cell's label comes from its
+// column header (pure CSS can't read the <th> text, so copy it onto the cell).
+function labelTableCells(root){
+  root.querySelectorAll(".admin-table").forEach(table => {
+    const heads = [...table.querySelectorAll("thead th")].map(th => th.textContent.trim());
+    table.querySelectorAll("tbody tr").forEach(tr => {
+      [...tr.children].forEach((td, i) => td.setAttribute("data-label", heads[i] || ""));
+    });
+  });
 }
 
 /* ---------------- Users section ---------------- */

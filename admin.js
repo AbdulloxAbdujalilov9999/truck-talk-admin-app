@@ -30,7 +30,7 @@ import {
 
 const ROLE_LABEL = { owner: "Owner", manager: "Manager", teacher: "Teacher", student: "Student" };
 
-let state = { section: "users", selectedStudent: null, selectedTeacherId: null };
+let state = { filters: { users: "all", students: "all" }, section: "users", selectedStudent: null, selectedTeacherId: null };
 let usersCache = [];
 let usersById = new Map();
 let progressCache = new Map();
@@ -346,12 +346,20 @@ function setSection(section, extra){
   state.section = section;
   Object.assign(state, extra || {});
   document.querySelectorAll("#mainNav .navbtn").forEach(btn => btn.classList.toggle("active", btn.dataset.section === state.section));
-  renderSection();
+  renderSection({ enter: true });
 }
 
-function renderSection(){
+// Live data (new sign-ups, progress, heartbeats) re-renders the section
+// constantly, so only a real section change plays the entrance animation,
+// and a re-render never interrupts someone typing in a field.
+function renderSection(opts){
   const main = $("adminApp");
   if (!main) return;
+  const enter = !!(opts && opts.enter);
+  const a = document.activeElement;
+  if (!enter && a && main.contains(a) && /^(INPUT|TEXTAREA)$/.test(a.tagName) && a.type !== "checkbox" && a.type !== "radio") return;
+  main.classList.remove("enter");
+  if (enter){ void main.offsetWidth; main.classList.add("enter"); }
   if (state.section === "users") renderUsersSection(main);
   else if (state.section === "students") renderStudentsSection(main);
   else if (state.section === "progress") renderProgressSection(main);
@@ -371,11 +379,32 @@ function labelTableCells(root){
   });
 }
 
+/* Segmented filter (same pill design as the EN | UZ | RU language switch). */
+function filterSwitch(name, options, current){
+  return `<div class="filter-bar"><div class="lang-switch filter-switch" role="group" aria-label="Filter">${options.map(o =>
+    `<button type="button" data-filter="${name}" data-value="${escapeHtml(o.value)}" class="${o.value === current ? "active" : ""}">${escapeHtml(o.label)}${o.count != null ? ` <span class="filter-count">${o.count}</span>` : ""}</button>`).join("")}</div></div>`;
+}
+function wireFilters(main){
+  main.querySelectorAll("[data-filter]").forEach(btn => btn.addEventListener("click", () => {
+    state.filters[btn.dataset.filter] = btn.dataset.value;
+    renderSection();
+  }));
+}
+
 /* ---------------- Users section ---------------- */
 function renderUsersSection(main){
   if (!isOwnerOrManager()){ main.innerHTML = `<p class="panel-sub">You don't have access to this section.</p>`; return; }
   const pending = usersCache.filter(u => u.status === "pending");
   const others = usersCache.filter(u => u.status !== "pending");
+  const count = (r) => others.filter(u => u.role === r).length;
+  const roleFilters = [
+    { value: "all", label: "All", count: others.length },
+    { value: "teacher", label: "Teachers", count: count("teacher") },
+    { value: "student", label: "Students", count: count("student") },
+  ];
+  if (isOwner() || count("manager")) roleFilters.push({ value: "manager", label: "Managers", count: count("manager") });
+  const roleFilter = roleFilters.some(f => f.value === state.filters.users) ? state.filters.users : "all";
+  const shown = roleFilter === "all" ? others : others.filter(u => u.role === roleFilter);
 
   main.innerHTML = `
     <section class="panel">
@@ -384,8 +413,9 @@ function renderUsersSection(main){
       ${pending.length ? pending.map(u => userRow(u, true)).join("") : `<p class="panel-sub">No pending requests.</p>`}
     </section>
     <section class="panel">
-      <div class="panel-head"><h2>All users (${others.length})</h2></div>
-      ${others.length ? others.map(u => userRow(u, false)).join("") : `<p class="panel-sub">No one yet.</p>`}
+      <div class="panel-head-row"><h2>All users (${shown.length})</h2>
+        ${filterSwitch("users", roleFilters, roleFilter)}</div>
+      ${shown.length ? shown.map(u => userRow(u, false)).join("") : `<p class="panel-sub">${others.length ? "No one matches this filter." : "No one yet."}</p>`}
     </section>`;
 
   main.querySelectorAll("[data-approve]").forEach(btn => btn.addEventListener("click", () => openApproveModal(btn.dataset.approve)));
@@ -396,6 +426,7 @@ function renderUsersSection(main){
   main.querySelectorAll("[data-role]").forEach(sel => sel.addEventListener("change", (e) => setUserRole(sel.dataset.role, e.target.value)));
   main.querySelectorAll("[data-teacher]").forEach(sel => sel.addEventListener("change", (e) => reassignTeacher(sel.dataset.teacher, e.target.value)));
   main.querySelectorAll("[data-reset-pw]").forEach(btn => btn.addEventListener("click", () => sendReset(btn.dataset.resetPw)));
+  wireFilters(main);
 }
 
 function canManage(u){
@@ -491,13 +522,27 @@ function visibleStudents(){
 }
 
 function renderStudentsSection(main){
-  const students = visibleStudents();
-  syncProgressSubs(students.map(s => s.id));
+  const allStudents = visibleStudents();
+  syncProgressSubs(allStudents.map(s => s.id));
+
+  // Owner/manager can narrow the list to one teacher's students.
+  let teacherFilters = [], teacherFilter = "all";
+  if (isOwnerOrManager()){
+    const teachers = usersCache.filter(u => u.role === "teacher" && u.status === "approved");
+    teacherFilters = [{ value: "all", label: "All", count: allStudents.length }]
+      .concat(teachers.map(t => ({ value: t.id, label: t.name || t.email, count: allStudents.filter(x => x.teacherId === t.id).length })))
+      .concat([{ value: "none", label: "No teacher", count: allStudents.filter(x => !x.teacherId).length }]);
+    teacherFilter = teacherFilters.some(f => f.value === state.filters.students) ? state.filters.students : "all";
+  }
+  const students = teacherFilter === "all" ? allStudents
+    : teacherFilter === "none" ? allStudents.filter(x => !x.teacherId)
+    : allStudents.filter(x => x.teacherId === teacherFilter);
 
   main.innerHTML = `
     <section class="panel">
       <div class="panel-head"><h2>Students (${students.length})</h2>
         <p class="panel-sub">${isOwnerOrManager() ? "Everyone currently enrolled as a student." : "Students assigned to you."}</p></div>
+      ${teacherFilters.length > 2 ? filterSwitch("students", teacherFilters, teacherFilter) : ""}
       ${students.length ? `<div class="table-wrap"><table class="admin-table">
         <thead><tr><th>Name</th><th>Email</th>${isOwnerOrManager() ? "<th>Teacher</th>" : ""}<th>XP</th><th>Streak</th><th>Status</th><th></th></tr></thead>
         <tbody>
@@ -514,11 +559,12 @@ function renderStudentsSection(main){
             </tr>`;
           }).join("")}
         </tbody>
-      </table></div>` : `<p class="panel-sub">No students yet.</p>`}
+      </table></div>` : `<p class="panel-sub">${allStudents.length ? "No students match this filter." : "No students yet."}</p>`}
     </section>`;
 
   main.querySelectorAll("[data-teacher]").forEach(sel => sel.addEventListener("change", (e) => reassignTeacher(sel.dataset.teacher, e.target.value)));
   main.querySelectorAll("[data-view-progress]").forEach(btn => btn.addEventListener("click", () => setSection("progress", { selectedStudent: btn.dataset.viewProgress })));
+  wireFilters(main);
 }
 
 /* ---------------- Progress section ---------------- */

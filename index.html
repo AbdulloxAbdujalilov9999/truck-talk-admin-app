@@ -112,10 +112,27 @@
     padding:24px max(20px, env(safe-area-inset-right)) 64px max(20px, env(safe-area-inset-left));
   }
   @keyframes fadeUp{ from{ opacity:0; transform:translateY(10px); } to{ opacity:1; transform:none; } }
-  .admin-content > *{ animation:fadeUp 0.38s ease both; }
-  .admin-content > *:nth-child(2){ animation-delay:0.05s; }
-  .admin-content > *:nth-child(n+3){ animation-delay:0.1s; }
-  @media (prefers-reduced-motion: reduce){ .admin-content > *{ animation:none; } }
+  .admin-content.enter > *{ animation:fadeUp 0.38s ease both; }
+  .admin-content.enter > *:nth-child(2){ animation-delay:0.05s; }
+  .admin-content.enter > *:nth-child(n+3){ animation-delay:0.1s; }
+  @media (prefers-reduced-motion: reduce){ .admin-content.enter > *{ animation:none; } }
+
+  /* ---------- Filter switch — same pill design as the course site's EN | UZ | RU language switch ---------- */
+  .lang-switch{
+    display:inline-flex; gap:2px; padding:3px; border-radius:99px;
+    background:var(--surface-2); border:1px solid var(--line);
+  }
+  .lang-switch button{
+    border:none; background:none; color:var(--muted); cursor:pointer;
+    font-family:var(--font-mono,monospace); font-size:0.74rem; font-weight:600; letter-spacing:0.04em;
+    min-width:38px; min-height:32px; padding:0 12px; border-radius:99px; white-space:nowrap;
+    display:inline-flex; align-items:center; gap:6px;
+  }
+  .lang-switch button.active{ background:var(--accent); color:var(--accent-ink); }
+  .filter-count{ opacity:0.7; font-weight:500; }
+  .filter-bar{ max-width:100%; overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch; margin-bottom:12px; }
+  .filter-bar::-webkit-scrollbar{ display:none; }
+  .panel-head-row .filter-bar{ margin-bottom:0; }
 
   /* ---------- Mobile: app-style bottom tab bar (same as the course site) ---------- */
   @media (max-width:760px){

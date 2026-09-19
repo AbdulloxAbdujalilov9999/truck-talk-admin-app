@@ -338,17 +338,28 @@ function mountApp(user, profile){
   window.TTE_syncProgress = (progress) => {
     set(ref(db, "progress/" + user.uid), Object.assign({}, progress, { updatedAt: serverTimestamp() })).catch(() => {});
   };
-  const heartbeat = { lastActive: serverTimestamp() };
+  // Writing lastActive changes this same profile node, which re-fires the
+  // onValue listener that called us — so the heartbeat is written once per
+  // sign-in (not on every call), and the host is only refreshed when
+  // something it actually shows changed. Otherwise the page redraws in a
+  // never-ending loop.
+  const heartbeat = {};
+  if (heartbeatUid !== user.uid){ heartbeat.lastActive = serverTimestamp(); heartbeatUid = user.uid; }
   if (email && email !== profile.email) heartbeat.email = email;
-  update(ref(db, "users/" + user.uid), heartbeat).catch(() => {});
+  if (Object.keys(heartbeat).length) update(ref(db, "users/" + user.uid), heartbeat).catch(() => {});
 
+  const signature = [user.uid, profile.name, email, profile.role, profile.teacherId || "", window.TTE_adminUrl || ""].join("|");
   if (!window.TTE_mounted){
     window.TTE_mounted = true;
+    mountedSignature = signature;
     window.TTE_mount && window.TTE_mount();
-  } else {
+  } else if (signature !== mountedSignature){
+    mountedSignature = signature;
     window.TTE_refresh && window.TTE_refresh();
   }
 }
+let heartbeatUid = null;
+let mountedSignature = null;
 
 function handleProfile(user, profile){
   if (profile.status === "restricted"){
@@ -395,7 +406,7 @@ export function initAuthGate(userOpts){
 
     if (!user){
       showAppShell(false);
-      window.TTE_user = null;
+      window.TTE_user = null; heartbeatUid = null;
       mode = "signin"; errorMsg = "";
       renderAuthScreen();
       return;

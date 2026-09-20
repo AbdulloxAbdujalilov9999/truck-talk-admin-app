@@ -338,6 +338,16 @@ function renderShell(){
   shell.querySelectorAll("[data-section]").forEach(btn => {
     btn.addEventListener("click", () => setSection(btn.dataset.section, { selectedStudent: null }));
   });
+  const content = $("adminApp");
+  // Picking an option commits the choice; drop focus so the list refreshes
+  // with the saved data, and catch up on any render skipped while focused.
+  content.addEventListener("change", (e) => { if (e.target.tagName === "SELECT") e.target.blur(); });
+  content.addEventListener("focusout", () => {
+    setTimeout(() => {
+      const a = document.activeElement;
+      if (renderOwed && !(a && content.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) renderSection();
+    }, 0);
+  });
   $("adminSignOut").addEventListener("click", () => window.TTE_signOut && window.TTE_signOut());
   updateUsersBadge();
 }
@@ -352,12 +362,20 @@ function setSection(section, extra){
 // Live data (new sign-ups, progress, heartbeats) re-renders the section
 // constantly, so only a real section change plays the entrance animation,
 // and a re-render never interrupts someone typing in a field.
+let renderOwed = false;
 function renderSection(opts){
   const main = $("adminApp");
   if (!main) return;
   const enter = !!(opts && opts.enter);
+  // Don't rebuild the DOM under an open dropdown or a field being typed in:
+  // replacing a <select> closes its list instantly. Remember that a render
+  // is owed and do it as soon as focus leaves the field.
   const a = document.activeElement;
-  if (!enter && a && main.contains(a) && /^(INPUT|TEXTAREA)$/.test(a.tagName) && a.type !== "checkbox" && a.type !== "radio") return;
+  if (!enter && a && main.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== "checkbox" && a.type !== "radio"){
+    renderOwed = true;
+    return;
+  }
+  renderOwed = false;
   main.classList.remove("enter");
   if (enter){ void main.offsetWidth; main.classList.add("enter"); }
   if (state.section === "users") renderUsersSection(main);

@@ -240,6 +240,27 @@ async function setUserStatus(uid, status){
   await update(ref(db), { [`users/${uid}/status`]: status, [`users/${uid}/updatedAt`]: serverTimestamp() });
   toast(status === "restricted" ? "Access restricted." : "Access restored.");
 }
+// Removes a restricted person's records in one atomic multi-path write. (Their
+// sign-in account itself can't be removed from here — that needs the Firebase
+// Admin SDK — but with no profile they're back to "request access".)
+async function deleteUser(uid){
+  const u = usersById.get(uid);
+  if (!u || u.status !== "restricted" || !canManage(u) || u.role === "owner") return;
+  const updates = { [`users/${uid}`]: null, [`progress/${uid}`]: null, [`resets/${uid}`]: null };
+  if (u.role === "student" && u.teacherId) updates[`teacherStudents/${u.teacherId}/${uid}`] = null;
+  if (u.role === "teacher"){
+    updates[`teacherStudents/${uid}`] = null;
+    updates[`events/${uid}`] = null;
+    usersCache.filter(x => x.role === "student" && x.teacherId === uid)
+      .forEach(x => { updates[`users/${x.id}/teacherId`] = null; });
+  }
+  try{
+    await update(ref(db), updates);
+    toast("User deleted.");
+  }catch(err){
+    alert("Couldn't delete this user: " + err.message);
+  }
+}
 async function setUserRole(uid, role){
   const u = usersById.get(uid);
   const oldTeacherId = u && u.teacherId;
@@ -438,7 +459,7 @@ function wireFilters(main){
 function renderUsersSection(main){
   if (!isOwnerOrManager()){ main.innerHTML = `<p class="panel-sub">You don't have access to this section.</p>`; return; }
   const pending = usersCache.filter(u => u.status === "pending");
-  const others = usersCache.filter(u => u.status !== "pending");
+  const others = restrictedLast(usersCache.filter(u => u.status !== "pending"));
   const count = (r) => others.filter(u => u.role === r).length;
   const roleFilters = [
     { value: "all", label: "All", count: others.length },
@@ -465,11 +486,23 @@ function renderUsersSection(main){
   main.querySelectorAll("[data-restrict]").forEach(btn => btn.addEventListener("click", () => {
     if (confirm("Restrict this person's access? They'll be signed out immediately.")) setUserStatus(btn.dataset.restrict, "restricted");
   }));
+  main.querySelectorAll("[data-delete-user]").forEach(btn => btn.addEventListener("click", () => {
+    const u = usersById.get(btn.dataset.deleteUser);
+    if (!u) return;
+    const extra = u.role === "teacher" ? " Their calendar is deleted and their students are left without a teacher." : u.role === "student" ? " Their progress is deleted too." : "";
+    if (confirm(`Permanently delete ${u.name || u.email}?${extra}\n\nThis can't be undone. They could sign in again later, but would have to request access from scratch.`)) deleteUser(u.id);
+  }));
   main.querySelectorAll("[data-restore]").forEach(btn => btn.addEventListener("click", () => setUserStatus(btn.dataset.restore, "approved")));
   main.querySelectorAll("[data-role]").forEach(sel => sel.addEventListener("change", (e) => setUserRole(sel.dataset.role, e.target.value)));
   main.querySelectorAll("[data-teacher]").forEach(sel => sel.addEventListener("change", (e) => reassignTeacher(sel.dataset.teacher, e.target.value)));
   main.querySelectorAll("[data-reset-pw]").forEach(btn => btn.addEventListener("click", () => sendReset(btn.dataset.resetPw)));
   wireFilters(main);
+}
+
+// Restricted accounts sink to the bottom of every list (order is otherwise unchanged).
+function restrictedLast(list){
+  const rank = (u) => u.status === "restricted" ? 1 : 0;
+  return list.slice().sort((a, b) => rank(a) - rank(b));
 }
 
 function canManage(u){
@@ -501,7 +534,8 @@ function userRow(u, isPending){
               ${u.role && u.role !== "owner" ? `<select class="select" data-role="${u.id}">${roleOptions.map(r => `<option value="${r}" ${u.role === r ? "selected" : ""}>${ROLE_LABEL[r]}</option>`).join("")}</select>` : ""}
               ${u.provider === "password" ? `<button class="btn btn-ghost btn-sm" data-reset-pw="${escapeHtml(u.email)}">Reset password</button>` : ""}
               ${u.status === "restricted"
-                ? `<button class="btn btn-ghost btn-sm" data-restore="${u.id}">Restore access</button>`
+                ? `<button class="btn btn-ghost btn-sm" data-restore="${u.id}">Restore access</button>
+                   <button class="btn btn-danger btn-sm" data-delete-user="${u.id}">Delete user</button>`
                 : (u.role !== "owner" ? `<button class="btn btn-danger btn-sm" data-restrict="${u.id}">Restrict</button>` : "")}
             ` : ""}
       </div>
@@ -560,8 +594,8 @@ function openApproveModal(uid){
 /* ---------------- Students section ---------------- */
 function visibleStudents(){
   return isOwnerOrManager()
-    ? usersCache.filter(u => u.role === "student")
-    : usersCache.filter(u => u.role === "student" && u.teacherId === me().uid);
+    ? restrictedLast(usersCache.filter(u => u.role === "student"))
+    : restrictedLast(usersCache.filter(u => u.role === "student" && u.teacherId === me().uid));
 }
 
 function renderStudentsSection(main){

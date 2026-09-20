@@ -36,8 +36,9 @@
     "progress": {
       "$uid": {
         ".read": "auth != null && (auth.uid === $uid || (root.child('users').child(auth.uid).child('status').val() === 'approved' && (root.child('users').child(auth.uid).child('role').val() === 'owner' || root.child('users').child(auth.uid).child('role').val() === 'manager')) || (root.child('users').child(auth.uid).child('status').val() === 'approved' && root.child('users').child(auth.uid).child('role').val() === 'teacher' && root.child('users').child($uid).child('teacherId').val() === auth.uid))",
-        // Own progress only — app.js writes here, nothing else does.
-        ".write": "auth != null && auth.uid === $uid"
+        // Own progress only — app.js writes here. The one exception: the
+        // owner/manager may delete it (when removing a restricted user).
+        ".write": "auth != null && (auth.uid === $uid || (!newData.exists() && root.child('users').child(auth.uid).child('status').val() === 'approved' && (root.child('users').child(auth.uid).child('role').val() === 'owner' || root.child('users').child(auth.uid).child('role').val() === 'manager')))"
       }
     },
 
@@ -48,6 +49,8 @@
     "resets": {
       "$uid": {
         ".read": "auth != null && (auth.uid === $uid || (auth != null && root.child('users').child(auth.uid).child('status').val() === 'approved' && (root.child('users').child(auth.uid).child('role').val() === 'owner' || root.child('users').child(auth.uid).child('role').val() === 'manager' || (root.child('users').child(auth.uid).child('role').val() === 'teacher' && root.child('users').child($uid).child('teacherId').val() === auth.uid))))",
+        // Owner/manager may delete the whole node (removing a restricted user).
+        ".write": "auth != null && !newData.exists() && root.child('users').child(auth.uid).child('status').val() === 'approved' && (root.child('users').child(auth.uid).child('role').val() === 'owner' || root.child('users').child(auth.uid).child('role').val() === 'manager')",
         "$rid": {
           ".write": "auth != null && root.child('users').child(auth.uid).child('status').val() === 'approved' && (root.child('users').child(auth.uid).child('role').val() === 'owner' || root.child('users').child(auth.uid).child('role').val() === 'manager' || (root.child('users').child(auth.uid).child('role').val() === 'teacher' && root.child('users').child($uid).child('teacherId').val() === auth.uid))",
           ".validate": "newData.hasChildren(['kind', 'key', 'by', 'at']) && (newData.child('kind').val() === 'lesson' || newData.child('kind').val() === 'homework' || newData.child('kind').val() === 'grammar')",

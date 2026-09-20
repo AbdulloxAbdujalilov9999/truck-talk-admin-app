@@ -43,7 +43,10 @@ let unsubTeacherStudentsIndex = null;
 let studentUnsubs = new Map(); // uid -> unsub (teacher mode only)
 let unsubEvents = null;
 
-function $(id){ return document.getElementById(id); }
+// While a section is being built off-screen (see renderSection), lookups
+// resolve inside that detached tree first.
+let renderRoot = null;
+function $(id){ return (renderRoot && renderRoot.querySelector("#" + id)) || document.getElementById(id); }
 function escapeHtml(s){
   return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
 }
@@ -341,7 +344,9 @@ function renderShell(){
   const content = $("adminApp");
   // Picking an option commits the choice; drop focus so the list refreshes
   // with the saved data, and catch up on any render skipped while focused.
-  content.addEventListener("change", (e) => { if (e.target.tagName === "SELECT") e.target.blur(); });
+  content.addEventListener("change", (e) => { if (e.target.tagName === "SELECT"){ selectBusyUntil = 0; e.target.blur(); } });
+  content.addEventListener("pointerdown", (e) => { if (e.target.tagName === "SELECT") selectBusyUntil = Date.now() + 20000; });
+  content.addEventListener("focusin", (e) => { if (e.target.tagName === "SELECT") selectBusyUntil = Date.now() + 20000; });
   content.addEventListener("focusout", () => {
     setTimeout(() => {
       const a = document.activeElement;
@@ -369,22 +374,42 @@ function renderSection(opts){
   const enter = !!(opts && opts.enter);
   // Don't rebuild the DOM under an open dropdown or a field being typed in:
   // replacing a <select> closes its list instantly. Remember that a render
-  // is owed and do it as soon as focus leaves the field.
+  // is owed and do it as soon as focus leaves the field. (Android draws the
+  // list as a native popup that can take focus away from the <select>, so a
+  // recent tap on one also counts as "busy" for a short while.)
   const a = document.activeElement;
-  if (!enter && a && main.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== "checkbox" && a.type !== "radio"){
+  const editing = a && main.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== "checkbox" && a.type !== "radio";
+  if (!enter && (editing || Date.now() < selectBusyUntil)){
     renderOwed = true;
+    clearTimeout(owedTimer);
+    owedTimer = setTimeout(() => { if (renderOwed) renderSection(); }, Math.max(400, selectBusyUntil - Date.now() + 50));
     return;
   }
   renderOwed = false;
+
+  // Build the section off-screen and only touch the page when the result
+  // actually differs — live updates (heartbeats, other people's activity)
+  // often change nothing visible, and those must not rebuild anything.
+  const tmp = document.createElement("div");
+  renderRoot = tmp;
+  try{
+    if (state.section === "users") renderUsersSection(tmp);
+    else if (state.section === "students") renderStudentsSection(tmp);
+    else if (state.section === "progress") renderProgressSection(tmp);
+    else if (state.section === "calendar") renderCalendarSection(tmp);
+    else if (state.section === "account") renderAccountSection(tmp);
+    labelTableCells(tmp);
+  } finally { renderRoot = null; }
+  const html = tmp.innerHTML;
+  if (!enter && html === lastSectionHtml) return;
+  lastSectionHtml = html;
   main.classList.remove("enter");
   if (enter){ void main.offsetWidth; main.classList.add("enter"); }
-  if (state.section === "users") renderUsersSection(main);
-  else if (state.section === "students") renderStudentsSection(main);
-  else if (state.section === "progress") renderProgressSection(main);
-  else if (state.section === "calendar") renderCalendarSection(main);
-  else if (state.section === "account") renderAccountSection(main);
-  labelTableCells(main);
+  main.replaceChildren(...tmp.childNodes);
 }
+let lastSectionHtml = "";
+let selectBusyUntil = 0;
+let owedTimer = null;
 
 // Phones show tables as stacked cards; each cell's label comes from its
 // column header (pure CSS can't read the <th> text, so copy it onto the cell).

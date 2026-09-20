@@ -404,6 +404,10 @@ const D = {
 "Teacher": { uz:"O'qituvchi", ru:"Учитель" },
 "Student": { uz:"O'quvchi", ru:"Ученик" },
 "Password reset email sent — check your inbox.": { uz:"Parolni tiklash xati yuborildi — pochtangizni tekshiring.", ru:"Письмо для сброса пароля отправлено — проверьте почту." },
+"Show translations": { uz:"Tarjimalarni ko'rsatish", ru:"Показывать перевод" },
+"Show the translation under every English word, sentence and question — in your chosen language (Uzbek by default).": { uz:"Har bir inglizcha so'z, gap va savol ostida tarjimani tanlangan tilingizda ko'rsatish (odatda o'zbekcha).", ru:"Показывать перевод под каждым английским словом, предложением и вопросом — на выбранном вами языке (по умолчанию узбекский)." },
+"English original": { uz:"Inglizcha asl matn", ru:"Английский оригинал" },
+"What does “{w}” mean?": { uz:"“{w}” nima degani?", ru:"Что означает «{w}»?" },
 };
 
 /* Week titles and grammar topics (course structure labels). */
@@ -429,9 +433,10 @@ const CONTENT = {
 "Advanced": { uz:"Ilg'or", ru:"Продвинутый уровень" },
 };
 
-function t(key, vars){
+function t(key, vars, lang){
   const row = D[key];
-  let s = current === "en" ? (row && row.en) || key : (row && row[current]) || (row && row.en) || key;
+  const L = lang || current;   // optional: translate into a specific language, not the interface one
+  let s = L === "en" ? (row && row.en) || key : (row && row[L]) || (row && row.en) || key;
   if (vars) s = s.replace(/\{(\w+)\}/g, (m, k) => (vars[k] != null ? vars[k] : m));
   return s;
 }
@@ -453,6 +458,7 @@ function setLang(code){
 document.documentElement.lang = current === "uz" ? "uz" : current === "ru" ? "ru" : "en";
 
 window.TT_t = t;
+window.TT_tl = (key, vars, lang) => t(key, vars, lang);
 window.TT_tc = tc;
 window.TT_lang = () => current;
 window.TT_setLang = setLang;

@@ -562,20 +562,22 @@ function userRow(u, isPending){
   const roleOptions = ["teacher", "student"].concat(isOwner() ? ["manager"] : []);
   return `
     <div class="user-row">
-      <div class="user-row-main">
-        ${u.photoURL ? `<img class="user-avatar" src="${escapeHtml(u.photoURL)}" alt="">` : `<span class="user-avatar user-avatar-fallback">${initial}</span>`}
-        <div>
-          <span class="user-name">${escapeHtml(u.name || "(no name)")}</span>
-          <span class="user-email mono">${escapeHtml(u.email)}</span>
+      <div class="user-row-top">
+        <div class="user-row-main">
+          ${u.photoURL ? `<img class="user-avatar" src="${escapeHtml(u.photoURL)}" alt="">` : `<span class="user-avatar user-avatar-fallback">${initial}</span>`}
+          <div class="user-identity">
+            <span class="user-name">${escapeHtml(u.name || "(no name)")}</span>
+            <span class="user-email mono" title="${escapeHtml(u.email)}">${escapeHtml(u.email)}</span>
+          </div>
+        </div>
+        <div class="user-row-badges">
+          <span class="user-badge role-${u.role || "none"}">${u.role ? escapeHtml(ROLE_LABEL[u.role] || u.role) : "—"}</span>
+          <span class="user-badge ${statusClass(u)}">${escapeHtml(statusLabel(u))}</span>
+          ${joinedLabel(u) ? `<span class="user-joined mono">Joined ${joinedLabel(u)}</span>` : ""}
         </div>
       </div>
-      <div class="user-row-meta">
-        <span class="user-badge role-${u.role || "none"}">${u.role ? escapeHtml(ROLE_LABEL[u.role] || u.role) : "—"}</span>
-        <span class="user-badge ${statusClass(u)}">${escapeHtml(statusLabel(u))}</span>
-        ${joinedLabel(u) ? `<span class="user-joined mono">Joined ${joinedLabel(u)}</span>` : ""}
+      <div class="user-row-controls">
         ${!isPending && u.role === "student" ? teacherPicker(u) : ""}
-      </div>
-      <div class="user-row-actions">
         ${isPending
           ? `<button class="btn btn-accent btn-sm" data-approve="${u.id}">Approve</button>
              ${canManage(u) ? `<button class="btn btn-danger btn-sm" data-restrict="${u.id}">Deny</button>` : ""}`

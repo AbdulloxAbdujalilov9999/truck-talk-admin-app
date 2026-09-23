@@ -168,22 +168,31 @@
     .stat-tile{ min-width:0; }
   }
 
-  /* ---------- Users ---------- */
-  .user-row{
-    display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap;
-    padding:14px 4px; border-top:1px solid var(--line);
-  }
+  /* ---------- Users ----------
+   * Each row is two stacked lines — identity+badges on top, editable
+   * controls (teacher/role pickers, action buttons) on the bottom, always
+   * right-aligned — rather than one line of independently-wrapping pieces.
+   * A long email or a long teacher name then only ever pushes its own
+   * line, instead of breaking the row into a disconnected-looking jumble. */
+  .user-row{ display:flex; flex-direction:column; gap:10px; padding:14px 4px; border-top:1px solid var(--line); }
   .user-row:first-of-type{ border-top:none; }
-  .user-row-main{ display:flex; align-items:center; gap:10px; min-width:0; }
+  .user-row-top{ display:flex; align-items:center; justify-content:space-between; gap:10px 14px; flex-wrap:wrap; }
+  .user-row-main{ display:flex; align-items:center; gap:10px; min-width:0; flex:1 1 200px; }
   .user-avatar{ width:32px; height:32px; border-radius:50%; flex-shrink:0; object-fit:cover; }
   .user-avatar-fallback{
     display:flex; align-items:center; justify-content:center; background:var(--surface-2);
     font-weight:700; color:var(--muted);
   }
+  .user-identity{ min-width:0; }
   .user-name{ font-weight:600; display:block; }
-  .user-email{ display:block; font-size:0.8rem; color:var(--muted); }
-  .user-row-meta{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-  .user-row-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+  .user-email{
+    display:block; font-size:0.8rem; color:var(--muted); max-width:100%;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .user-row-badges{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; flex:0 1 auto; }
+  .user-row-controls{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+  .user-row-controls .select{ min-width:0; max-width:190px; text-overflow:ellipsis; }
+  .user-row-controls .btn{ white-space:nowrap; }
   .user-badge{
     font-size:0.7rem; text-transform:uppercase; letter-spacing:0.04em; padding:3px 9px;
     border-radius:99px; background:var(--surface-2); color:var(--ink); white-space:nowrap;
@@ -192,7 +201,7 @@
   .status-trial{ background:var(--accent-mid); color:#fff; }
   .status-approved{ background:var(--accent-2); color:#fff; }
   .status-restricted{ background:var(--danger); color:#fff; }
-  .user-joined{ font-size:0.72rem; color:var(--muted); }
+  .user-joined{ font-size:0.72rem; color:var(--muted); white-space:nowrap; }
   .role-owner{ background:var(--ink); color:var(--accent-ink); }
 
   .reset-row{ display:flex; gap:10px; flex-wrap:wrap; }
@@ -215,13 +224,14 @@
   .pick-row:hover{ background:var(--surface-2); }
 
   @media (max-width:640px){
-    .user-row{ flex-direction:column; align-items:stretch; gap:10px; padding:14px 0; }
+    .user-row{ padding:14px 0; }
     .user-row-main{ align-items:center; }
     .user-avatar{ width:38px; height:38px; }
-    .user-email{ overflow-wrap:anywhere; }
-    .user-row-actions{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-    .user-row-actions .btn, .user-row-actions .select{ width:100%; }
-    .user-row-actions > :only-child{ grid-column:1 / -1; }
+    /* Plenty of vertical room on a phone — wrap the full email instead of clipping it. */
+    .user-email{ overflow:visible; text-overflow:clip; white-space:normal; overflow-wrap:anywhere; }
+    .user-row-controls{ display:grid; grid-template-columns:1fr 1fr; gap:8px; justify-content:stretch; }
+    .user-row-controls .btn, .user-row-controls .select{ width:100%; max-width:none; }
+    .user-row-controls > :only-child{ grid-column:1 / -1; }
     .reset-row .select{ flex:1 1 100%; }
 
     /* Tables become stacked cards on phones (labels come from each column header) */

@@ -30,6 +30,32 @@ const APPLE_ICON = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.36
 // the English key if that script isn't loaded.
 const T = (k, v) => (window.TT_t ? window.TT_t(k, v) : String(k).replace(/\{(\w+)\}/g, (m, x) => (v && v[x] != null ? v[x] : m)));
 let redraw = null;   // re-renders whichever gate screen is showing, when the language changes
+// New (non-owner) sign-ups get immediate, temporary access — a 3-day free
+// trial — instead of waiting on approval. They're written with
+// status:"pending", role:"student" (see requestAccess below); database.rules.json's
+// creation rule requires exactly that shape from a self-write. An owner or
+// manager can approve (making access permanent, any role) or restrict
+// (ending it immediately) at any point, trial running or not — see
+// admin/admin.js's approveUser/setUserStatus. trialInfo() below is the one
+// place that defines "3 days" and is used both to gate access here and to
+// show the days-left banner once mounted.
+const TRIAL_MS = 3 * 24 * 60 * 60 * 1000;
+function trialInfo(profile){
+  const start = typeof profile.createdAt === "number" ? profile.createdAt : Date.now();
+  const end = start + TRIAL_MS;
+  const msLeft = end - Date.now();
+  return { active: msLeft > 0, daysLeft: Math.max(0, Math.ceil(msLeft / 86400000)), end };
+}
+// A trial user's status is "pending" for as long as they're mid-trial —
+// re-check right when it lapses so an open tab doesn't keep showing the
+// app past expiry until the next unrelated re-render.
+let trialTimer = null;
+function scheduleTrialRecheck(user, profile, msUntilExpiry){
+  clearTimeout(trialTimer);
+  if (msUntilExpiry == null) return;
+  trialTimer = setTimeout(() => handleProfile(user, profile), Math.min(Math.max(msUntilExpiry, 0) + 1000, 2147483647));
+}
+
 const ROLE_LABEL = { owner: "Owner", manager: "Manager", teacher: "Teacher", student: "Student" };
 
 let opts = null;
@@ -256,17 +282,25 @@ async function requestAccess(user, name){
     lastActive: serverTimestamp(),
   };
   if (isOwner) profile.role = "owner";
+  else profile.role = "student";   // immediate 3-day trial access, see trialInfo() above
   await set(ref(db, "users/" + user.uid), profile);
 }
 
 /* ---------------- Pending / restricted / wrong-app screens ---------------- */
 function renderPending(profile){
   redraw = () => renderPending(profile);
+  // Every non-owner sign-up gets role:"student" immediately (see
+  // requestAccess), so landing here while still "pending" with that role
+  // can only mean the 3-day trial ran out — anything else (no role at all)
+  // is a genuine, not-yet-reviewed request.
+  const expired = profile.role === "student";
   root().innerHTML = `
     <div class="auth-screen"><div class="auth-card">
       <span class="auth-brand">TRUCK TALK</span>
-      <h1 class="auth-title">${T("Awaiting approval")}</h1>
-      <p class="auth-sub">${T("Thanks, {name} — your request is in. An owner or manager needs to approve it before you can get in. This page updates automatically, no need to refresh.", { name: escapeHtml(profile.name || "") })}</p>
+      <h1 class="auth-title">${expired ? T("Free trial ended") : T("Awaiting approval")}</h1>
+      <p class="auth-sub">${expired
+        ? T("Thanks, {name} — your free trial has ended. An owner or manager needs to approve your account so you can keep using Truck Talk. This page updates automatically, no need to refresh.", { name: escapeHtml(profile.name || "") })
+        : T("Thanks, {name} — your request is in. An owner or manager needs to approve it before you can get in. This page updates automatically, no need to refresh.", { name: escapeHtml(profile.name || "") })}</p>
       <button class="btn btn-ghost btn-sm" id="pendingSignOut">${T("Sign out")}</button>
     </div></div>`;
   $("pendingSignOut").addEventListener("click", () => signOut(auth));
@@ -319,7 +353,7 @@ function renderWrongApp(profile){
 }
 
 /* ---------------- Wiring into the host app ---------------- */
-function mountApp(user, profile){
+function mountApp(user, profile, trial){
   redraw = null;   // the gate is done; a language change now belongs to the host app
   showAppShell(true);
   // auth.currentUser.email is the source of truth (e.g. after someone
@@ -327,7 +361,10 @@ function mountApp(user, profile){
   // reconcile the database copy whenever the two drift apart, rather
   // than writing it eagerly at change-email time before it's confirmed.
   const email = user.email || profile.email;
-  window.TTE_user = { uid: user.uid, name: profile.name, email, role: profile.role, teacherId: profile.teacherId || null };
+  const trialDaysLeft = trial && trial.active ? trial.daysLeft : null;
+  const unlockFrom = typeof profile.unlockFrom === "number" ? profile.unlockFrom : null;
+  const unlockTo = typeof profile.unlockTo === "number" ? profile.unlockTo : null;
+  window.TTE_user = { uid: user.uid, name: profile.name, email, role: profile.role, teacherId: profile.teacherId || null, trialDaysLeft, unlockFrom, unlockTo };
   // Non-student roles get a voluntary link to the admin dashboard (shown
   // in the host app's own UI, e.g. Settings) — they are never forced
   // there. Only appKind "main" ever has a role other than student mount
@@ -348,7 +385,7 @@ function mountApp(user, profile){
   if (email && email !== profile.email) heartbeat.email = email;
   if (Object.keys(heartbeat).length) update(ref(db, "users/" + user.uid), heartbeat).catch(() => {});
 
-  const signature = [user.uid, profile.name, email, profile.role, profile.teacherId || "", window.TTE_adminUrl || ""].join("|");
+  const signature = [user.uid, profile.name, email, profile.role, profile.teacherId || "", window.TTE_adminUrl || "", trialDaysLeft, unlockFrom, unlockTo].join("|");
   if (!window.TTE_mounted){
     window.TTE_mounted = true;
     mountedSignature = signature;
@@ -363,11 +400,15 @@ let mountedSignature = null;
 
 function handleProfile(user, profile){
   if (profile.status === "restricted"){
+    clearTimeout(trialTimer);
     showAppShell(false);
     renderRestricted();
     return;
   }
-  if (profile.status !== "approved" || !profile.role){
+  const trial = profile.status === "pending" && profile.role === "student" ? trialInfo(profile) : null;
+  const usable = profile.status === "approved" ? !!profile.role : !!(trial && trial.active);
+  if (!usable){
+    clearTimeout(trialTimer);
     showAppShell(false);
     renderPending(profile);
     return;
@@ -380,11 +421,14 @@ function handleProfile(user, profile){
   // data there and gets sent back to the course instead.
   const matchesThisApp = opts.appKind === "admin" ? !isStudentRole : true;
   if (!matchesThisApp){
+    clearTimeout(trialTimer);
     showAppShell(false);
     renderWrongApp(profile);
     return;
   }
-  mountApp(user, profile);
+  if (trial && trial.active) scheduleTrialRecheck(user, profile, trial.end - Date.now());
+  else clearTimeout(trialTimer);
+  mountApp(user, profile, trial);
 }
 
 /**
@@ -405,6 +449,7 @@ export function initAuthGate(userOpts){
     if (unsubProfile){ unsubProfile(); unsubProfile = null; }
 
     if (!user){
+      clearTimeout(trialTimer);
       showAppShell(false);
       window.TTE_user = null; heartbeatUid = null;
       mode = "signin"; errorMsg = "";

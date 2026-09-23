@@ -19,17 +19,41 @@
         // Owner: unrestricted. Manager: full control over teacher/student/
         // pending accounts, but can never touch (or create) an owner or a
         // manager. Anyone: may still create exactly one profile — their
-        // own — as either the hardcoded owner bootstrap or a pending
-        // request with no role and no teacher; approval only ever happens
-        // via the owner/manager branch above, never at creation.
-        ".write": "auth != null && ((root.child('users').child(auth.uid).child('status').val() === 'approved' && root.child('users').child(auth.uid).child('role').val() === 'owner') || (root.child('users').child(auth.uid).child('status').val() === 'approved' && root.child('users').child(auth.uid).child('role').val() === 'manager' && !(data.exists() && (data.child('role').val() === 'owner' || data.child('role').val() === 'manager')) && !(newData.exists() && (newData.child('role').val() === 'owner' || newData.child('role').val() === 'manager'))) || (auth.uid === $uid && !data.exists() && newData.child('email').val() === auth.token.email && ((auth.token.email === 'abdujalilov7707@gmail.com' && newData.child('role').val() === 'owner' && newData.child('status').val() === 'approved') || (auth.token.email !== 'abdujalilov7707@gmail.com' && !newData.hasChild('role') && newData.child('status').val() === 'pending' && !newData.hasChild('teacherId')))))",
+        // own — as either the hardcoded owner bootstrap, or (everyone else)
+        // a pending request that is immediately role:"student" and has no
+        // teacher yet — this is what gives a brand-new sign-up their 3-day
+        // free trial of the course site (see trialInfo() in
+        // shared/auth-gate.js) without waiting on approval. Turning that
+        // into permanent access (any role), or cutting it short, only ever
+        // happens via the owner/manager branch above, never at creation.
+        ".write": "auth != null && ((root.child('users').child(auth.uid).child('status').val() === 'approved' && root.child('users').child(auth.uid).child('role').val() === 'owner') || (root.child('users').child(auth.uid).child('status').val() === 'approved' && root.child('users').child(auth.uid).child('role').val() === 'manager' && !(data.exists() && (data.child('role').val() === 'owner' || data.child('role').val() === 'manager')) && !(newData.exists() && (newData.child('role').val() === 'owner' || newData.child('role').val() === 'manager'))) || (auth.uid === $uid && !data.exists() && newData.child('email').val() === auth.token.email && ((auth.token.email === 'abdujalilov7707@gmail.com' && newData.child('role').val() === 'owner' && newData.child('status').val() === 'approved') || (auth.token.email !== 'abdujalilov7707@gmail.com' && newData.child('role').val() === 'student' && newData.child('status').val() === 'pending' && !newData.hasChild('teacherId')))))",
 
         // An approved user may always touch just these three fields of
         // their own record (name edits, presence heartbeat) — on top of,
         // not instead of, the owner/manager grant above.
         "name": { ".write": "auth != null && auth.uid === $uid" },
         "lastActive": { ".write": "auth != null && auth.uid === $uid" },
-        "updatedAt": { ".write": "auth != null && auth.uid === $uid" }
+        "updatedAt": { ".write": "auth != null && auth.uid === $uid" },
+
+        // Early access to a range of lessons, set directly by staff (owner,
+        // manager, or the student's own teacher) — no request/approve step,
+        // unlike resets below: this is a live field on the student's own
+        // profile, which their already-open app is already listening to,
+        // so it takes effect immediately if they're online (and, same as
+        // any other profile field, the next time they open the app
+        // otherwise). isUnlocked() in app.js treats [unlockFrom, unlockTo]
+        // as open regardless of what's actually been completed. Restricted
+        // to student targets; a manager still can't use this side door to
+        // touch an owner/manager account (there'd be no effect anyway —
+        // app.js only ever reads it for a student).
+        "unlockFrom": {
+          ".write": "auth != null && root.child('users').child($uid).child('role').val() === 'student' && ((root.child('users').child(auth.uid).child('status').val() === 'approved' && (root.child('users').child(auth.uid).child('role').val() === 'owner' || root.child('users').child(auth.uid).child('role').val() === 'manager')) || (root.child('users').child(auth.uid).child('status').val() === 'approved' && root.child('users').child(auth.uid).child('role').val() === 'teacher' && root.child('users').child($uid).child('teacherId').val() === auth.uid))",
+          ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 60)"
+        },
+        "unlockTo": {
+          ".write": "auth != null && root.child('users').child($uid).child('role').val() === 'student' && ((root.child('users').child(auth.uid).child('status').val() === 'approved' && (root.child('users').child(auth.uid).child('role').val() === 'owner' || root.child('users').child(auth.uid).child('role').val() === 'manager')) || (root.child('users').child(auth.uid).child('status').val() === 'approved' && root.child('users').child(auth.uid).child('role').val() === 'teacher' && root.child('users').child($uid).child('teacherId').val() === auth.uid))",
+          ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 60 && (!newData.parent().hasChild('unlockFrom') || newData.val() >= newData.parent().child('unlockFrom').val()))"
+        }
       }
     },
 

@@ -404,6 +404,11 @@ const D = {
 "Teacher": { uz:"O'qituvchi", ru:"Учитель" },
 "Student": { uz:"O'quvchi", ru:"Ученик" },
 "Password reset email sent — check your inbox.": { uz:"Parolni tiklash xati yuborildi — pochtangizni tekshiring.", ru:"Письмо для сброса пароля отправлено — проверьте почту." },
+"Free trial ended": { uz:"Bepul sinov muddati tugadi", ru:"Бесплатный пробный период закончился" },
+"Thanks, {name} — your free trial has ended. An owner or manager needs to approve your account so you can keep using Truck Talk. This page updates automatically, no need to refresh.": { uz:"Rahmat, {name} — bepul sinov muddatingiz tugadi. Truck Talk'dan foydalanishda davom etish uchun egasi yoki menejer hisobingizni tasdiqlashi kerak. Sahifa o'zi yangilanadi, qayta yuklash shart emas.", ru:"Спасибо, {name} — ваш бесплатный пробный период закончился. Чтобы продолжить пользоваться Truck Talk, владелец или менеджер должен одобрить ваш аккаунт. Страница обновится сама, перезагружать не нужно." },
+"Free trial": { uz:"Bepul sinov", ru:"Бесплатный пробный период" },
+"{n} days left in your free trial": { uz:"Bepul sinov muddatidan {n} kun qoldi", ru:"Осталось {n} дней бесплатного периода" },
+"Your account hasn't been approved yet. Ask an owner or manager to approve it before your trial ends to keep full access.": { uz:"Hisobingiz hali tasdiqlanmagan. To'liq kirishni saqlab qolish uchun sinov muddati tugashidan oldin egasi yoki menejerdan hisobingizni tasdiqlashni so'rang.", ru:"Ваш аккаунт ещё не одобрен. Чтобы сохранить полный доступ, попросите владельца или менеджера одобрить его до окончания пробного периода." },
 "Show translations": { uz:"Tarjimalarni ko'rsatish", ru:"Показывать перевод" },
 "Show the translation under every English word, sentence and question — in your chosen language (Uzbek by default).": { uz:"Har bir inglizcha so'z, gap va savol ostida tarjimani tanlangan tilingizda ko'rsatish (odatda o'zbekcha).", ru:"Показывать перевод под каждым английским словом, предложением и вопросом — на выбранном вами языке (по умолчанию узбекский)." },
 "English original": { uz:"Inglizcha asl matn", ru:"Английский оригинал" },
@@ -466,6 +471,19 @@ window.TT_onLang = (fn) => { listeners.push(fn); };
 window.TT_langs = LANGS;
 // Small language switcher (EN | UZ | RU) — returns an HTML string; wire it
 // up with TT_bindLangSwitch(root).
+// "{n} day(s) left in your free trial" — Russian needs a real plural rule
+// (1/2-4/5+ take different word forms), so this is computed in code rather
+// than as a dictionary entry with a single {n} slot.
+function trialDaysPhrase(n){
+  if (current === "uz") return `Bepul sinov muddatidan ${n} kun qoldi`;
+  if (current === "ru"){
+    const mod10 = n % 10, mod100 = n % 100;
+    const word = (mod10 === 1 && mod100 !== 11) ? "день" : (mod10 >= 2 && mod10 <= 4 && !(mod100 >= 12 && mod100 <= 14)) ? "дня" : "дней";
+    return `Осталось ${n} ${word} бесплатного периода`;
+  }
+  return n === 1 ? `${n} day left in your free trial` : `${n} days left in your free trial`;
+}
+window.TT_trialDays = trialDaysPhrase;
 window.TT_langSwitchHtml = () => `<div class="lang-switch" role="group" aria-label="${t("Language")}">${LANGS.map(l => `<button type="button" data-lang="${l.code}" class="${l.code === current ? "active" : ""}" title="${l.label}">${l.short}</button>`).join("")}</div>`;
 window.TT_bindLangSwitch = (root) => {
   (root || document).querySelectorAll("[data-lang]").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));

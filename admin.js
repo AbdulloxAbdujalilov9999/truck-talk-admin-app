@@ -30,6 +30,31 @@ import {
 
 const ROLE_LABEL = { owner: "Owner", manager: "Manager", teacher: "Teacher", student: "Student" };
 
+// A brand-new sign-up is written as status:"pending", role:"student" and
+// gets 3 days of full course access before needing an owner/manager's
+// approval — see trialInfo() in shared/auth-gate.js, which is the other
+// half of this (and the actual access gate; this file only displays it).
+const TRIAL_MS = 3 * 24 * 60 * 60 * 1000;
+function trialDaysLeft(u){
+  if (u.status !== "pending" || u.role !== "student") return null;
+  const start = typeof u.createdAt === "number" ? u.createdAt : Date.now();
+  return Math.max(0, Math.ceil((start + TRIAL_MS - Date.now()) / 86400000));
+}
+function statusLabel(u){
+  const days = trialDaysLeft(u);
+  if (days == null) return u.status;
+  return days > 0 ? `Trial · ${days}d left` : "Trial expired";
+}
+function statusClass(u){
+  const days = trialDaysLeft(u);
+  if (days == null) return "status-" + u.status;
+  return days > 0 ? "status-trial" : "status-pending";
+}
+function joinedLabel(u){
+  if (typeof u.createdAt !== "number") return "";
+  return new Date(u.createdAt).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+}
+
 let state = { filters: { users: "all", students: "all" }, section: "users", selectedStudent: null, selectedTeacherId: null };
 let usersCache = [];
 let usersById = new Map();
@@ -189,11 +214,34 @@ function syncResetSubs(uid){
   resetsUnsubs.set(uid, unsub);
 }
 
-// A reset is a request the student's app applies (see applyRemoteResets in
-// app.js) — staff can't rewrite a student's progress directly.
-async function requestReset(studentUid, kind, key){
+// Staff can't rewrite a student's local progress directly (it's stored on
+// their own device), so this queues the reset for their app to apply (see
+// applyRemoteResets in app.js) — but there's no approval step on their
+// end, it's not something they can decline. It applies immediately if
+// they're online right now, otherwise the next time they open the app.
+async function queueReset(studentUid, kind, key){
   await push(ref(db, "resets/" + studentUid), {
     kind, key: String(key), by: me().uid, byName: me().name || "", at: serverTimestamp(),
+  });
+}
+// Unlike resets above, this writes straight to the student's own profile —
+// a field their already-open app is already listening to — so there's no
+// queue and nothing for them to apply: it's just live, the moment this
+// write lands (immediately if they're online, same as any other profile
+// change like a teacher reassignment).
+function canGrantUnlock(student){
+  return isOwnerOrManager() || (isTeacher() && student.teacherId === me().uid);
+}
+async function setUnlockRange(studentUid, from, to){
+  await update(ref(db), {
+    [`users/${studentUid}/unlockFrom`]: from,
+    [`users/${studentUid}/unlockTo`]: to,
+  });
+}
+async function clearUnlockRange(studentUid){
+  await update(ref(db), {
+    [`users/${studentUid}/unlockFrom`]: null,
+    [`users/${studentUid}/unlockTo`]: null,
   });
 }
 function resetLabel(r){
@@ -220,8 +268,8 @@ function openResetModal(studentUid, kind, key){
   $("resetCancel").addEventListener("click", closeModal);
   $("resetConfirm").addEventListener("click", async () => {
     $("resetConfirm").disabled = true;
-    try{ await requestReset(studentUid, kind, key); closeModal(); toast("Reset requested."); renderSection(); }
-    catch(err){ $("resetConfirm").disabled = false; alert("Couldn't request the reset: " + err.message); }
+    try{ await queueReset(studentUid, kind, key); closeModal(); toast("Reset done — applied now if they're online, or the next time they open the app."); renderSection(); }
+    catch(err){ $("resetConfirm").disabled = false; alert("Couldn't reset it: " + err.message); }
   });
 }
 
@@ -473,7 +521,7 @@ function renderUsersSection(main){
   main.innerHTML = `
     <section class="panel">
       <div class="panel-head"><h2>Pending requests</h2>
-        <p class="panel-sub">People who signed up and are waiting to be approved.</p></div>
+        <p class="panel-sub">People using their 3-day free trial, or waiting to be approved after it ends. Approve to give them permanent access any time — no need to wait for the trial to run out.</p></div>
       ${pending.length ? pending.map(u => userRow(u, true)).join("") : `<p class="panel-sub">No pending requests.</p>`}
     </section>
     <section class="panel">
@@ -523,7 +571,8 @@ function userRow(u, isPending){
       </div>
       <div class="user-row-meta">
         <span class="user-badge role-${u.role || "none"}">${u.role ? escapeHtml(ROLE_LABEL[u.role] || u.role) : "—"}</span>
-        <span class="user-badge status-${u.status}">${escapeHtml(u.status)}</span>
+        <span class="user-badge ${statusClass(u)}">${escapeHtml(statusLabel(u))}</span>
+        ${joinedLabel(u) ? `<span class="user-joined mono">Joined ${joinedLabel(u)}</span>` : ""}
         ${!isPending && u.role === "student" ? teacherPicker(u) : ""}
       </div>
       <div class="user-row-actions">
@@ -554,6 +603,7 @@ function teacherPicker(student){
 function openApproveModal(uid){
   const u = usersById.get(uid);
   const teachers = usersCache.filter(x => x.role === "teacher" && x.status === "approved");
+  const defaultStudent = u.role === "student";   // already true for anyone on the free trial
   const modalRoot = $("modalRoot");
   modalRoot.innerHTML = `
     <div class="modal-backdrop">
@@ -561,10 +611,10 @@ function openApproveModal(uid){
         <h2>Approve ${escapeHtml(u.name)}</h2>
         <p class="panel-sub">Choose a role for this account.</p>
         <div class="role-choice">
-          <label><input type="radio" name="approveRole" value="teacher" checked> Teacher</label>
-          <label><input type="radio" name="approveRole" value="student"> Student</label>
+          <label><input type="radio" name="approveRole" value="teacher" ${defaultStudent ? "" : "checked"}> Teacher</label>
+          <label><input type="radio" name="approveRole" value="student" ${defaultStudent ? "checked" : ""}> Student</label>
         </div>
-        <div id="approveTeacherPick" hidden>
+        <div id="approveTeacherPick" ${defaultStudent ? "" : "hidden"}>
           <label class="auth-label">Assign a teacher</label>
           <select class="select" id="approveTeacherSelect" style="width:100%;">
             <option value="">— choose a teacher —</option>
@@ -693,6 +743,22 @@ function renderProgressSection(main){
       </div>
     </section>
 
+    ${canGrantUnlock(student) ? `<section class="panel">
+      <div class="panel-head">
+        <h2>Unlock lessons early</h2>
+        <p class="panel-sub">Open a range of days for ${escapeHtml(student.name)} right now, even ones they haven't reached yet. Days outside the range stay locked until they finish their way there — ${escapeHtml(student.name)} can never unlock days themselves.</p>
+      </div>
+      ${typeof student.unlockFrom === "number" && typeof student.unlockTo === "number"
+        ? `<p class="panel-sub" style="margin-bottom:10px;">Days <strong>${student.unlockFrom}–${student.unlockTo}</strong> are open early right now.</p>`
+        : ""}
+      <div class="reset-row">
+        <select class="select" id="unlockFromSelect">${dayOptions(null, student.unlockFrom)}</select>
+        <select class="select" id="unlockToSelect">${dayOptions(null, student.unlockTo)}</select>
+        <button class="btn btn-accent" id="unlockSetBtn">Unlock</button>
+        ${typeof student.unlockFrom === "number" ? `<button class="btn btn-ghost" id="unlockClearBtn">Clear</button>` : ""}
+      </div>
+    </section>` : ""}
+
     <section class="panel">
       <div class="panel-head">
         <h2>Reset a lesson</h2>
@@ -735,6 +801,21 @@ function renderProgressSection(main){
   $("resetDaySelect").addEventListener("change", (e) => { state.resetDay = e.target.value; });
   $("resetDayBtn").addEventListener("click", () => openResetModal(state.selectedStudent, "lesson", $("resetDaySelect").value));
   main.querySelectorAll("[data-reset]").forEach(btn => btn.addEventListener("click", () => openResetModal(state.selectedStudent, btn.dataset.reset, btn.dataset.key)));
+
+  const unlockSetBtn = $("unlockSetBtn"), unlockClearBtn = $("unlockClearBtn");
+  if (unlockSetBtn) unlockSetBtn.addEventListener("click", async () => {
+    const from = Number($("unlockFromSelect").value), to = Number($("unlockToSelect").value);
+    if (to < from){ alert("The second day has to be the same as or after the first."); return; }
+    unlockSetBtn.disabled = true;
+    try{ await setUnlockRange(state.selectedStudent, from, to); toast(`Days ${from}–${to} unlocked.`); }
+    catch(err){ alert("Couldn't unlock those days: " + err.message); }
+    finally{ unlockSetBtn.disabled = false; }
+  });
+  if (unlockClearBtn) unlockClearBtn.addEventListener("click", async () => {
+    unlockClearBtn.disabled = true;
+    try{ await clearUnlockRange(state.selectedStudent); toast("Early access cleared."); }
+    catch(err){ alert("Couldn't clear it: " + err.message); unlockClearBtn.disabled = false; }
+  });
 }
 
 /* ---------------- Calendar section ---------------- */

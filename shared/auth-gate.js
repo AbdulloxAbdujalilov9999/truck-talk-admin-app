@@ -13,7 +13,7 @@
  * window.TTE_refresh() rather than rendering any app UI itself — this
  * module only ever owns the full-screen gate states.
  */
-import { auth, db, googleProvider, appleProvider, isFirebaseConfigured } from "./firebase.js";
+import { auth, db, googleProvider, isFirebaseConfigured } from "./firebase.js";
 import { OWNER_EMAIL } from "./firebase-config.js";
 import {
   onAuthStateChanged, signInWithPopup, signInWithCredential, GoogleAuthProvider, signOut,
@@ -24,7 +24,14 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-database.js";
 
 const GOOGLE_ICON = `<svg viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.1 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.5 16 18.9 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.1 29.6 4 24 4c-7.6 0-14.1 4.3-17.4 10.7z"/><path fill="#4CAF50" d="M24 44c5.5 0 10.5-2.1 14.2-5.6l-6.6-5.6C29.6 34.8 26.9 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.6 5.1C9.8 39.6 16.3 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.3-4.1 5.7l6.6 5.6C39.9 37.4 44 31.4 44 24c0-1.3-.1-2.7-.4-3.5z"/></svg>`;
-const APPLE_ICON = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.365 1.43c0 1.14-.415 2.09-1.244 2.86-.997.914-2.03 1.44-3.15 1.35-.075-1.09.435-2.14 1.235-2.87.87-.79 2.14-1.34 3.05-1.34.03 0 .07 0 .11 0zM20.36 17.02c-.494 1.13-.73 1.635-1.36 2.63-.884 1.395-2.13 3.13-3.68 3.145-1.38.014-1.735-.9-3.605-.885-1.87.014-2.26.9-3.64.885-1.55-.015-2.73-1.585-3.615-2.98C1.9 16.75 1.62 12.3 3.02 9.93c.99-1.665 2.55-2.64 4.005-2.64 1.48 0 2.415.9 3.64.9 1.19 0 1.92-.9 3.64-.9 1.3 0 2.68.71 3.665 1.935-3.22 1.765-2.7 6.36.39 7.795z"/></svg>`;
+// Apple sign-in is coded and ready (see git history / firebase.js's
+// appleProvider) but hidden here — it needs an Apple Developer Program
+// membership ($99/yr) to create the Services ID, Team ID, Key ID and
+// private key that Firebase requires before it will actually accept an
+// Apple sign-in (the console's on/off switch alone does nothing without
+// them: attempting it still fails with auth/operation-not-allowed).
+// Re-enable by restoring the Apple button below and the appleProvider
+// import once that's set up.
 
 // Interface text goes through shared/i18n.js (window.TT_t); falls back to
 // the English key if that script isn't loaded.
@@ -147,7 +154,6 @@ function renderAuthScreen(){
       ${!isReset ? `
         <div class="auth-providers">
           <button type="button" class="auth-btn-provider" id="googleBtn" ${busy ? "disabled" : ""}>${GOOGLE_ICON}<span>${T("Continue with Google")}</span></button>
-          <button type="button" class="auth-btn-provider" id="appleBtn" ${busy ? "disabled" : ""}>${APPLE_ICON}<span>${T("Continue with Apple")}</span></button>
         </div>
         <div class="auth-divider">${T("or")}</div>
       ` : ""}
@@ -173,7 +179,6 @@ function renderAuthScreen(){
 
   $("authForm").addEventListener("submit", onEmailAuthSubmit);
   const g = $("googleBtn"); if (g) g.addEventListener("click", signInWithGoogle);
-  const a = $("appleBtn"); if (a) a.addEventListener("click", () => signInWithProvider(appleProvider));
   root().querySelectorAll("[data-mode]").forEach(btn => {
     btn.addEventListener("click", () => { mode = btn.dataset.mode; errorMsg = ""; renderAuthScreen(); });
   });

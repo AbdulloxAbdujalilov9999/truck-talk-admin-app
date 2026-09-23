@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/__/auth/:path*", "destination": "https://truck-talk-admin.firebaseapp.com/__/auth/:path*" },
+    { "source": "/__/firebase/:path*", "destination": "https://truck-talk-admin.firebaseapp.com/__/firebase/:path*" }
+  ]
+}

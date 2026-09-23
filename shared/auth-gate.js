@@ -13,10 +13,10 @@
  * window.TTE_refresh() rather than rendering any app UI itself — this
  * module only ever owns the full-screen gate states.
  */
-import { auth, db, googleProvider, isFirebaseConfigured } from "./firebase.js";
+import { auth, db, googleProvider, isFirebaseConfigured, usesRedirectSignIn } from "./firebase.js";
 import { OWNER_EMAIL } from "./firebase-config.js";
 import {
-  onAuthStateChanged, signInWithPopup, signInWithCredential, GoogleAuthProvider, signOut,
+  onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, signInWithCredential, GoogleAuthProvider, signOut,
   createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail,
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 import {
@@ -187,6 +187,7 @@ function renderAuthScreen(){
 async function signInWithProvider(provider){
   errorMsg = ""; busy = true; renderAuthScreen();
   try{
+    if (usesRedirectSignIn){ await signInWithRedirect(auth, provider); return; }
     await signInWithPopup(auth, provider);
   }catch(err){
     busy = false; errorMsg = mapAuthError(err); renderAuthScreen();
@@ -448,6 +449,12 @@ export function initAuthGate(userOpts){
   if (!isFirebaseConfigured){ renderNotConfigured(); return; }
 
   mode = "signin"; errorMsg = ""; busy = false;
+
+  // Coming back from a redirect sign-in: the signed-in user arrives via
+  // onAuthStateChanged below; this only surfaces a failed attempt.
+  if (usesRedirectSignIn){
+    getRedirectResult(auth).catch((err) => { busy = false; errorMsg = mapAuthError(err); renderAuthScreen(); });
+  }
 
   onAuthStateChanged(auth, (user) => {
     busy = false;

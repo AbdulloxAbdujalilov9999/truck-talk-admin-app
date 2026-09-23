@@ -274,15 +274,23 @@ function openResetModal(studentUid, kind, key){
 }
 
 async function approveUser(uid, role, teacherId){
+  const u = usersById.get(uid);
+  const wasRestricted = u && u.status === "restricted";
+  // A restricted student's old teacherStudents index entry is otherwise
+  // never cleaned up (restricting only flips status) — this path also
+  // grants access back to a restricted account with a fresh role, so
+  // clear it whenever the teacher is changing or gone.
+  const oldTeacherId = u && u.teacherId;
   const updates = {
     [`users/${uid}/role`]: role,
     [`users/${uid}/status`]: "approved",
     [`users/${uid}/updatedAt`]: serverTimestamp(),
     [`users/${uid}/teacherId`]: role === "student" ? (teacherId || null) : null,
   };
+  if (oldTeacherId && oldTeacherId !== teacherId) updates[`teacherStudents/${oldTeacherId}/${uid}`] = null;
   if (role === "student" && teacherId) updates[`teacherStudents/${teacherId}/${uid}`] = true;
   await update(ref(db), updates);
-  toast("Approved.");
+  toast(wasRestricted ? "Access granted." : "Approved.");
 }
 async function setUserStatus(uid, status){
   await update(ref(db), { [`users/${uid}/status`]: status, [`users/${uid}/updatedAt`]: serverTimestamp() });
@@ -540,7 +548,6 @@ function renderUsersSection(main){
     const extra = u.role === "teacher" ? " Their calendar is deleted and their students are left without a teacher." : u.role === "student" ? " Their progress is deleted too." : "";
     if (confirm(`Permanently delete ${u.name || u.email}?${extra}\n\nThis can't be undone. They could sign in again later, but would have to request access from scratch.`)) deleteUser(u.id);
   }));
-  main.querySelectorAll("[data-restore]").forEach(btn => btn.addEventListener("click", () => setUserStatus(btn.dataset.restore, "approved")));
   main.querySelectorAll("[data-role]").forEach(sel => sel.addEventListener("change", (e) => setUserRole(sel.dataset.role, e.target.value)));
   main.querySelectorAll("[data-teacher]").forEach(sel => sel.addEventListener("change", (e) => reassignTeacher(sel.dataset.teacher, e.target.value)));
   main.querySelectorAll("[data-reset-pw]").forEach(btn => btn.addEventListener("click", () => sendReset(btn.dataset.resetPw)));
@@ -560,6 +567,31 @@ function canManage(u){
 function userRow(u, isPending){
   const initial = escapeHtml(((u.name || "?")[0] || "?").toUpperCase());
   const roleOptions = ["teacher", "student"].concat(isOwner() ? ["manager"] : []);
+
+  // A restricted account is a dead account until someone re-approves it —
+  // its old role/teacher no longer mean anything (they're chosen fresh on
+  // Grant access, same as a brand-new request), so the row shows nothing
+  // but who it is, faded to signal "inactive".
+  if (u.status === "restricted"){
+    return `
+      <div class="user-row restricted">
+        <div class="user-row-top">
+          <div class="user-row-main">
+            ${u.photoURL ? `<img class="user-avatar" src="${escapeHtml(u.photoURL)}" alt="">` : `<span class="user-avatar user-avatar-fallback">${initial}</span>`}
+            <div class="user-identity">
+              <span class="user-name">${escapeHtml(u.name || "(no name)")}</span>
+              <span class="user-email mono" title="${escapeHtml(u.email)}">${escapeHtml(u.email)}</span>
+            </div>
+          </div>
+        </div>
+        ${canManage(u) ? `
+        <div class="user-row-controls">
+          <button class="btn btn-accent btn-sm" data-approve="${u.id}">Grant access</button>
+          <button class="btn btn-danger btn-sm" data-delete-user="${u.id}">Delete user</button>
+        </div>` : ""}
+      </div>`;
+  }
+
   return `
     <div class="user-row">
       <div class="user-row-top">
@@ -584,10 +616,7 @@ function userRow(u, isPending){
           : canManage(u) ? `
               ${u.role && u.role !== "owner" ? `<select class="select" data-role="${u.id}">${roleOptions.map(r => `<option value="${r}" ${u.role === r ? "selected" : ""}>${ROLE_LABEL[r]}</option>`).join("")}</select>` : ""}
               ${u.provider === "password" ? `<button class="btn btn-ghost btn-sm" data-reset-pw="${escapeHtml(u.email)}">Reset password</button>` : ""}
-              ${u.status === "restricted"
-                ? `<button class="btn btn-ghost btn-sm" data-restore="${u.id}">Restore access</button>
-                   <button class="btn btn-danger btn-sm" data-delete-user="${u.id}">Delete user</button>`
-                : (u.role !== "owner" ? `<button class="btn btn-danger btn-sm" data-restrict="${u.id}">Restrict</button>` : "")}
+              ${u.role !== "owner" ? `<button class="btn btn-danger btn-sm" data-restrict="${u.id}">Restrict</button>` : ""}
             ` : ""}
       </div>
     </div>`;
@@ -605,12 +634,13 @@ function teacherPicker(student){
 function openApproveModal(uid){
   const u = usersById.get(uid);
   const teachers = usersCache.filter(x => x.role === "teacher" && x.status === "approved");
+  const restoring = u.status === "restricted";   // same modal grants a restricted account a fresh role, from scratch
   const defaultStudent = u.role === "student";   // already true for anyone on the free trial
   const modalRoot = $("modalRoot");
   modalRoot.innerHTML = `
     <div class="modal-backdrop">
       <div class="modal-card">
-        <h2>Approve ${escapeHtml(u.name)}</h2>
+        <h2>${restoring ? "Grant access to" : "Approve"} ${escapeHtml(u.name)}</h2>
         <p class="panel-sub">Choose a role for this account.</p>
         <div class="role-choice">
           <label><input type="radio" name="approveRole" value="teacher" ${defaultStudent ? "" : "checked"}> Teacher</label>
@@ -626,7 +656,7 @@ function openApproveModal(uid){
         </div>
         <div class="modal-actions">
           <button class="btn btn-ghost" id="approveCancel">Cancel</button>
-          <button class="btn btn-accent" id="approveConfirm">Approve</button>
+          <button class="btn btn-accent" id="approveConfirm">${restoring ? "Grant access" : "Approve"}</button>
         </div>
       </div>
     </div>`;

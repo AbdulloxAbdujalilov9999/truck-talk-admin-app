@@ -242,12 +242,12 @@ function renderCompleteProfile(user){
     <div class="auth-screen"><div class="auth-card">
       <span class="auth-brand">TRUCK TALK</span>
       <h1 class="auth-title">${T("Complete your profile")}</h1>
-      <p class="auth-sub">${T("Tell us your name, then request access. An owner or manager will review your request — you'll get in as soon as they approve it.")}</p>
+      <p class="auth-sub">${T("Tell us your name to create your account and start your free 3-day trial — no approval needed.")}</p>
       ${errorMsg ? `<div class="auth-error">${escapeHtml(errorMsg)}</div>` : ""}
       <form id="profileForm" class="auth-form">
         <label class="auth-label" for="profName">${T("Full name")}</label>
         <input class="auth-input" id="profName" type="text" value="${escapeHtml(user.displayName || "")}" required>
-        <button class="btn btn-accent" type="submit" style="margin-top:14px;width:100%;" ${busy ? "disabled" : ""}>${busy ? T("Please wait…") : T("Request access")}</button>
+        <button class="btn btn-accent" type="submit" style="margin-top:14px;width:100%;" ${busy ? "disabled" : ""}>${busy ? T("Please wait…") : T("Create account")}</button>
       </form>
       <div class="auth-links"><button class="auth-link-btn" id="cancelProfileBtn">${T("Sign out")}</button></div>
     </div></div>`;

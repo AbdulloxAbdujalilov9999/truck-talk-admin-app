@@ -382,9 +382,8 @@ const D = {
 "Google sign-in did not return a credential.": { uz:"Google kirish ma'lumotini qaytarmadi.", ru:"Google не вернул данные для входа." },
 /* ---- account gate: profile / pending / restricted / wrong app ---- */
 "Complete your profile": { uz:"Profilingizni to'ldiring", ru:"Заполните профиль" },
-"Tell us your name, then request access. An owner or manager will review your request — you'll get in as soon as they approve it.": { uz:"Ismingizni ayting va kirishni so'rang. Egasi yoki menejer so'rovingizni ko'rib chiqadi — tasdiqlanishi bilan kira olasiz.", ru:"Укажите имя и запросите доступ. Владелец или менеджер рассмотрит заявку — вы получите доступ сразу после одобрения." },
+"Tell us your name to create your account and start your free 3-day trial — no approval needed.": { uz:"Ismingizni ayting — hisobingiz darhol yaratiladi va 3 kunlik bepul sinov muddati boshlanadi, tasdiqlash shart emas.", ru:"Укажите имя — аккаунт создастся сразу, и начнётся бесплатный 3-дневный период, одобрение не требуется." },
 "Full name": { uz:"To'liq ism", ru:"Полное имя" },
-"Request access": { uz:"Kirishni so'rash", ru:"Запросить доступ" },
 "Awaiting approval": { uz:"Tasdiqlash kutilmoqda", ru:"Ожидает одобрения" },
 "Thanks, {name} — your request is in. An owner or manager needs to approve it before you can get in. This page updates automatically, no need to refresh.": { uz:"Rahmat, {name} — so'rovingiz qabul qilindi. Kirishdan oldin egasi yoki menejer uni tasdiqlashi kerak. Sahifa o'zi yangilanadi, qayta yuklash shart emas.", ru:"Спасибо, {name} — заявка принята. Владелец или менеджер должен её одобрить, чтобы вы могли войти. Страница обновится сама, перезагружать не нужно." },
 "Access restricted": { uz:"Kirish cheklangan", ru:"Доступ ограничен" },

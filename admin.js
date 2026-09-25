@@ -25,7 +25,7 @@ import {
   ref, onValue, set, update, remove, push, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-database.js";
 import {
-  sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential, verifyBeforeUpdateEmail,
+  sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential, verifyBeforeUpdateEmail, linkWithCredential,
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 
 const ROLE_LABEL = { owner: "Owner", manager: "Manager", teacher: "Teacher", student: "Student" };
@@ -345,6 +345,16 @@ async function sendReset(email){
   }catch(err){
     alert(err.message);
   }
+}
+// Google/Apple-only accounts have no password at all — if the owner ever
+// loses access to that Google/Apple account, they'd be locked out of the
+// dashboard with no way back in. This lets them add an email+password
+// fallback while they still have access.
+async function addPassword(newPassword){
+  const user = auth.currentUser;
+  const cred = EmailAuthProvider.credential(user.email, newPassword);
+  await linkWithCredential(user, cred);
+  toast("Password login added — you can now sign in with your email and this password too.");
 }
 async function changeEmail(newEmail, currentPassword){
   // This project requires verifying the new address before it takes
@@ -1020,6 +1030,13 @@ function renderAccountSection(main){
             <span class="user-email">Your email and password are managed there, not here.</span>
           </div>
         </div>
+        <div class="user-row">
+          <div>
+            <span class="user-name">Password login</span>
+            <span class="user-email">Add a password so you can still get in with your email if you ever lose access to ${escapeHtml(providerLabel)}.</span>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="acctAddPw">Add password</button>
+        </div>
       `}
       <div class="user-row">
         <div>
@@ -1034,7 +1051,41 @@ function renderAccountSection(main){
   if (resetBtn) resetBtn.addEventListener("click", () => sendReset(me().email));
   const changeBtn = $("acctChangeEmail");
   if (changeBtn) changeBtn.addEventListener("click", openChangeEmailModal);
+  const addPwBtn = $("acctAddPw");
+  if (addPwBtn) addPwBtn.addEventListener("click", openAddPasswordModal);
   $("acctSignOut").addEventListener("click", () => window.TTE_signOut && window.TTE_signOut());
+}
+
+function openAddPasswordModal(){
+  const modalRoot = $("modalRoot");
+  modalRoot.innerHTML = `
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <h2>Add password login</h2>
+        <p class="panel-sub">Set a password for ${escapeHtml(me().email || "")} so you can sign in even without your current sign-in method.</p>
+        <form id="addPwForm" class="auth-form">
+          <label class="auth-label">New password</label>
+          <input class="auth-input" id="newPwInput" type="password" required minlength="6" autocomplete="new-password">
+          <label class="auth-label">Confirm password</label>
+          <input class="auth-input" id="confirmPwInput" type="password" required minlength="6" autocomplete="new-password">
+          <div class="modal-actions">
+            <button type="button" class="btn btn-ghost" id="addPwCancel">Cancel</button>
+            <button type="submit" class="btn btn-accent">Add password</button>
+          </div>
+        </form>
+      </div>
+    </div>`;
+  $("addPwCancel").addEventListener("click", closeModal);
+  $("addPwForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const pw = $("newPwInput").value;
+    const confirmPw = $("confirmPwInput").value;
+    if (pw !== confirmPw){ alert("Passwords don't match."); return; }
+    try{
+      await addPassword(pw);
+      closeModal();
+    }catch(err){ alert(err.message); }
+  });
 }
 
 function openChangeEmailModal(){

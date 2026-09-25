@@ -5,7 +5,7 @@
  * hit the network (auth, database reads/writes) — this dashboard's whole
  * purpose is live data, so it isn't meant to work fully offline.
  */
-const CACHE_NAME = "tta-shell-v5";
+const CACHE_NAME = "tta-shell-v6";
 const CORE_ASSETS = [
   "./",
   "./index.html",
